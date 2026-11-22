@@ -11,4 +11,4 @@ permissions:
 
 jobs:
   line-limit:
-    uses: Glyndor/.github/.github/workflows/line-limit.yml@b12b4c0bb5c2caec50ea8e46a21a5c0519b73ad9 # v1.10.0
+    uses: Glyndor/.github/.github/workflows/line-limit.yml@d5041b038b7d4935e75400dff612962e6fa14893 # v1.21.0
