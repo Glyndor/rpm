@@ -1,0 +1,16 @@
+name: guard
+
+# Thin caller: the guard logic (also require the head repo to be the base repo,
+# so a fork branch named "develop" cannot pass) lives in the reusable so every
+# repo gets the same rule. The pull_request trigger must live here. Keep the job
+# id "develop-only" so the required check is "develop-only / develop-only".
+
+on:
+  pull_request:
+    branches: ["main"]
+
+permissions: {}
+
+jobs:
+  develop-only:
+    uses: Glyndor/.github/.github/workflows/main-guard.yml@b12b4c0bb5c2caec50ea8e46a21a5c0519b73ad9 # v1.10.0

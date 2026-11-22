@@ -1,0 +1,47 @@
+# Personal dev scratch space
+dev/
+
+# Rust build artifacts
+target/
+*.rs.bk
+
+# Go build artifacts
+*.exe
+*.test
+
+# Node / Bun
+node_modules/
+dist/
+.next/
+out/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Env files (real ones — .env.example is tracked)
+.env
+.env.local
+.env.*.local
+
+# Editor
+*.swp
+*.swo
+
+# FUSE filesystem temp files
+.fuse_hidden*
+
+# Playwright
+**/playwright-report/
+**/test-results/
