@@ -1,0 +1,278 @@
+name: Schedule freshness (reusable)
+
+# Fails when a scheduled workflow has not succeeded recently enough.
+#
+# Every other guard in this organisation is an assertion that fails loudly. A
+# cron that stops firing is the exception: it emits nothing at all, and "no
+# alert" is indistinguishable from "all clear". On 2026-06-29 every scheduled
+# workflow in the org stopped. podup and apt recovered on 07-15 because they
+# happened to get activity and a disable/enable cycle; authcore, epistle, unitpm
+# and glyndor.net stayed dark for four more weeks, all of them reporting
+# `active` the whole time. It cost a real finding: authcore's GO-2026-5856 was
+# caught by a hand-run of govulncheck, not by the weekly audit that exists for
+# exactly that.
+#
+# Call this from a workflow that already runs often (normal CI) so the absence
+# of a scheduled run becomes a red check on ordinary work. It is the same idea
+# as apt's `ValidFor: 14d`, which expires the archive rather than letting it
+# serve a frozen snapshot when the pipeline stalls.
+#
+# The caller must grant `actions: read` alongside `contents: read`: a called
+# workflow cannot elevate beyond the permissions of the workflow that calls it,
+# and reading run history needs that scope. Without it the run does not start.
+#
+# A workflow whose cron has not fired yet has nothing on record to measure.
+# That is a failure for an established workflow and expected for a new one, so
+# a workflow with NO scheduled run on record at all gets a grace period as
+# long as the limit, counted from the commit that added its file to the
+# branch, and passes with a notice that says when the grace ends. After that,
+# or as soon as any scheduled run exists, the usual rule applies: a workflow
+# with only old runs is a dead cron and gets no grace. If the date the file
+# was added cannot be read (a shallow history, a file that is not there, a
+# date in the future), the job fails; there is no grace by default. Without
+# this, a watcher added with its cron is born red, and a gate born red is a
+# gate somebody switches off.
+
+on:
+  workflow_call:
+    inputs:
+      workflow:
+        description: >-
+          File name of the scheduled workflow to check, e.g. "audit.yml".
+        type: string
+        required: true
+      max-age-days:
+        description: >-
+          Fail when the newest successful scheduled run is older than this
+          many whole days. Allow about two periods, so a weekly job tolerates
+          one miss: 15 for a weekly schedule, 3 for a daily one. Give exactly
+          one of max-age-days and max-age-hours.
+        type: number
+        required: false
+      max-age-hours:
+        description: >-
+          The same limit in whole hours, for a schedule that fires more than
+          once a day, where a limit in days tolerates dozens of missed runs.
+          Give exactly one of max-age-days and max-age-hours.
+        type: number
+        required: false
+      count-any-conclusion:
+        description: >-
+          Measure the newest scheduled run whatever its conclusion, instead of
+          the newest successful one. For a workflow that watches ITSELF this is
+          the only shape that can recover: its own failed runs never enter a
+          success-only query, so once the last success ages past the limit
+          every later run fails on this job and re-creates the condition,
+          however healthy the cron is. With this on, the job answers "did the
+          cron fire" and leaves "did everything pass" to the other jobs in
+          the same workflow. Leave it off for a workflow watched from outside.
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: schedule-freshness-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}-${{ inputs.workflow }}
+  # Only a pull request supersedes its own earlier run. A push to main is a
+  # distinct commit that has to be judged on its own, and the suite-on-main
+  # watcher reads those verdicts; a cron run is never replaced by the next.
+  # Outside a pull request the group carries the run id: a group shared by
+  # pushes would still drop the older run that is waiting when a newer one
+  # queues, and two quick merges would lose the verdict of the first.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  freshness:
+    name: schedule freshness
+    # ubuntu-latest on purpose: this job only asks GitHub or git for data and
+    # compares strings, so a new image cannot change its verdict.
+    runs-on: ubuntu-latest
+    # Bound: 2 to 15s measured, and it queries the API. Ten times that,
+    # rounded up, never under ten minutes; the six-hour default is what a
+    # hang would otherwise cost. The three attempts below add at most 40
+    # seconds of sleep, which the ten minutes already cover.
+    timeout-minutes: 10
+    permissions:
+      actions: read # reading this repository's workflow-run history
+      contents: read # the history that dates a new workflow's grace period
+    steps:
+      # One commit. The history is read only for the grace period of a new
+      # workflow, which is counted from the commit that added its file, and that
+      # branch is taken when no scheduled run is on record: the step below
+      # deepens the checkout there and nowhere else. A shallow checkout would
+      # date every file to its one commit, so a history that could not be
+      # deepened is refused below.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      # This step runs as GITHUB_TOKEN, a job-scoped token on its own rate
+      # limit, and reads nothing beyond this repository's own run history. No
+      # personal credential is ever used here, and the `actions: read` grant
+      # above is the whole of what it can reach.
+      - name: Check the newest successful scheduled run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          WORKFLOW: ${{ inputs.workflow }}
+          MAX_AGE_DAYS: ${{ inputs.max-age-days }}
+          MAX_AGE_HOURS: ${{ inputs.max-age-hours }}
+          ANY_CONCLUSION: ${{ inputs.count-any-conclusion }}
+        run: |
+          set -euo pipefail
+
+          # Exactly one of the two limits. A number input the caller leaves
+          # out arrives as 0, so zero cannot be told from absent and is read
+          # as not given; a limit under a day is written in hours. Anything
+          # that is not a whole number would reach the arithmetic below and
+          # die there with a message about bash, not about the input.
+          days="${MAX_AGE_DAYS:-}"
+          hours="${MAX_AGE_HOURS:-}"
+          [ "$days" = 0 ] && days=""
+          [ "$hours" = 0 ] && hours=""
+          if [ -n "$days" ] && [ -n "$hours" ]; then
+            echo "::error::Both max-age-days (${days}) and max-age-hours (${hours}) are set; give exactly one."
+            exit 1
+          fi
+          if [ -z "$days" ] && [ -z "$hours" ]; then
+            echo "::error::Neither max-age-days nor max-age-hours is set; give exactly one, greater than zero."
+            exit 1
+          fi
+          if [ -n "$days" ]; then
+            limit="$days" unit_seconds=86400 unit=days short=d
+          else
+            limit="$hours" unit_seconds=3600 unit=hours short=h
+          fi
+          if ! [[ "$limit" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::The limit must be a whole number of ${unit}; got '${limit}'."
+            exit 1
+          fi
+          # The age is counted in whole units, so a run exactly at the limit
+          # passes and one a full unit past it fails.
+          limit_name="${limit}-${unit%s}"
+
+          # status=success is the question for a workflow watched from
+          # outside. A workflow watching itself cannot ask it: a run that
+          # fails this job is not a success, so it never feeds the query, and
+          # the alarm re-arms itself forever once it fires. That caller passes
+          # count-any-conclusion and gets status=completed instead: any run
+          # the cron produced counts as the cron being alive.
+          status_filter="status=success"
+          what="successful"
+          verb="succeeded on a schedule"
+          if [ "${ANY_CONCLUSION:-false}" = "true" ]; then
+            status_filter="status=completed"
+            what="completed"
+            verb="ran on a schedule"
+          fi
+
+          # The first item of a filtered page is not always the newest run. On
+          # 2026-09-08 a one-item page came back with a run thirteen days old
+          # while that morning's success existed, and this gate went red over
+          # nothing (Glyndor/apt#249). On 2026-09-17 the same shape happened
+          # with thirty items: the page had no run newer than 2026-09-10 while
+          # forty-six newer successful scheduled runs existed
+          # (Glyndor/scoop-bucket#173). Two explanations fit and the log cannot
+          # separate them: the API returned thirty runs in no useful order out
+          # of a larger set, or the listing was served from a stale index for a
+          # moment.
+          #
+          # The window asks the question the gate really has, which is
+          # whether any run exists inside the limit. A page that comes back
+          # empty inside the window cannot be trusted on its own, so the
+          # windowed query retries up to three times with twenty seconds
+          # between. A listing served stale is what the retry exists for; the
+          # cost is at most forty seconds on a job that is not a required
+          # check.
+          cutoff=$(date -u -d "$((limit + 1)) ${unit} ago" +%Y-%m-%dT%H:%M:%SZ)
+          now_s=$(date -u +%s)
+          base="repos/${REPO}/actions/workflows/${WORKFLOW}/runs?event=schedule&${status_filter}&per_page=30"
+          windowed_url="${base}&created=%3E%3D${cutoff}"
+
+          latest=""
+          good=""
+          for attempt in 1 2 3; do
+            latest=$(gh api "$windowed_url" \
+              --jq '[.workflow_runs[].created_at] | max // empty')
+            if [ -n "$latest" ]; then
+              age_seconds=$(( now_s - $(date -u -d "$latest" +%s) ))
+              age=$(( age_seconds / unit_seconds ))
+              if [ "$age" -le "$limit" ]; then
+                good="yes"
+                break
+              fi
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep 20
+            fi
+          done
+
+          if [ -n "$good" ]; then
+            echo "Newest ${what} scheduled run of ${WORKFLOW}: ${latest} (${age}${short} ago)."
+            echo "Within the ${limit_name} limit."
+            exit 0
+          fi
+
+          # Three windowed attempts saw nothing recent. Run the same query
+          # once without the window only to word the failure: empty means the
+          # cron has no record on the API at all, otherwise the run that
+          # exists is older than the limit. If the unwindowed answer is
+          # recent, that is the contradiction the next person needs to see:
+          # the run exists but three windowed pages did not include it,
+          # which is exactly what the retries exist for.
+          latest=$(gh api "$base" \
+            --jq '[.workflow_runs[].created_at] | max // empty')
+          if [ -z "$latest" ]; then
+            # The grace period of a new cron: no scheduled run of any
+            # conclusion on record, and a file added less than the limit ago.
+            # Anything else, an unreadable date included, fails as before.
+            any_runs=$(gh api "repos/${REPO}/actions/workflows/${WORKFLOW}/runs?event=schedule&per_page=1" \
+              --jq '.total_count')
+            added=""
+            if [ "$any_runs" = 0 ] && [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = true ]; then
+              git fetch --quiet --unshallow --no-tags origin >/dev/null 2>&1 || true
+            fi
+            if [ "$any_runs" = 0 ] \
+              && [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = false ]; then
+              added=$(git log -1 --diff-filter=A --format=%ct -- ".github/workflows/${WORKFLOW}" 2>/dev/null) || added=""
+            fi
+            # A commit date is the committer's to set. One in the future would
+            # keep a dead cron in its grace period for as long as it says, so
+            # it counts as a date that could not be read.
+            if [[ "$added" =~ ^[0-9]+$ ]] && [ "$added" -gt "$now_s" ]; then
+              added="in the future"
+            fi
+            if [[ "$added" =~ ^[0-9]+$ ]] && [ $(( (now_s - added) / unit_seconds )) -lt "$limit" ]; then
+              ends=$(date -u -d "@$(( added + limit * unit_seconds ))" +%Y-%m-%dT%H:%M:%SZ)
+              echo "::notice::${WORKFLOW} has no scheduled run on record yet. Its file was added to the branch on $(date -u -d "@${added}" +%Y-%m-%dT%H:%M:%SZ), so it is in its grace period until ${ends}; after that it must have ${what} scheduled runs within the ${limit_name} limit."
+              exit 0
+            fi
+            echo "::error::No ${what} scheduled run on record for ${WORKFLOW}."
+            if [ "$any_runs" = 0 ] && ! [[ "$added" =~ ^[0-9]+$ ]]; then
+              echo "The date its file was added to the branch could not be read, or lies in the future, so no grace period applies." >&2
+            fi
+            echo "Either its cron has never fired, or the schedule was dropped." >&2
+            echo "Check that the workflow still exists on the default branch, then" >&2
+            echo "toggle it: gh workflow disable ${WORKFLOW} && gh workflow enable ${WORKFLOW}" >&2
+            exit 1
+          fi
+
+          age_seconds=$(( now_s - $(date -u -d "$latest" +%s) ))
+          age=$(( age_seconds / unit_seconds ))
+
+          if [ "$age" -le "$limit" ]; then
+            echo "::error::The windowed query saw nothing 3 times, but the unwindowed query returned ${latest}."
+            echo "The gate cannot reconcile this: a recent run exists but three windowed" >&2
+            echo "pages did not include it. Treat as a stale listing index and re-run later." >&2
+            exit 1
+          fi
+
+          echo "::error::${WORKFLOW} last ${verb} ${age} ${unit} ago, over the ${limit_name} limit."
+          echo "A schedule that stops firing reports nothing, so treat this as the alert it never sent." >&2
+          echo "GitHub runs crons hours late, so a small overrun right at the boundary is not the problem;" >&2
+          echo "a multiple of the period is. Toggle the workflow off and on to re-register it, then check" >&2
+          echo "the next scheduled fire rather than the next few minutes." >&2
+          exit 1

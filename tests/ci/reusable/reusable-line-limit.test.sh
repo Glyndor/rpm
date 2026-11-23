@@ -1,0 +1,208 @@
+#!/usr/bin/env bash
+# Behaviour tests for .github/workflows/reusable-line-limit.yml.
+#
+# The lint added in `scripts/quality/lint/lint-workflow-shell.sh` checks that this workflow`\s
+# shell is well formed. It cannot check that the shell does what the gate claims,
+# and a counter that counts the wrong files is perfectly well formed. These tests
+# plant a file that must be reported and require red, which is the only way to
+# tell a working limit from one that is looking at nothing.
+#
+# Requires: python3, git.
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+
+pass=0
+fail=0
+
+check() { # <description> <expected> <actual>
+	if [ "$2" = "$3" ]; then
+		echo "ok    $1"
+		pass=$((pass + 1))
+	else
+		echo "FAIL  $1"
+		echo "        expected: $2"
+		echo "        actual:   $3"
+		fail=$((fail + 1))
+	fi
+}
+
+# The shell of a step, read out of the workflow as it ships.
+# shellcheck disable=SC1091 # the path is resolved at run time
+. "$HERE/tests/fixtures/ci/step-script.sh"
+
+WORKFLOW="$HERE/.github/workflows/reusable-line-limit.yml"
+step_script "$WORKFLOW" "Check file lengths" > "$WORK/step.sh"
+
+# A git repository, because the step enumerates with `git ls-files -z` and so
+# only ever sees tracked files.
+sandbox() { # $1=path  $2..=files to create as "name:lines"
+	local dir="$1"; shift
+	rm -rf "$dir"; mkdir -p "$dir"
+	git -C "$dir" init -q
+	git -C "$dir" config user.email t@example.invalid
+	git -C "$dir" config user.name t
+	local spec name lines
+	for spec in "$@"; do
+		name="${spec%%:*}"; lines="${spec##*:}"
+		mkdir -p "$dir/$(dirname "$name")"
+		yes 'x' | head -n "$lines" > "$dir/$name"
+	done
+	git -C "$dir" add -A
+	# --allow-empty: some cases seed no tracked files on purpose, and a git
+	# error on stderr would read as a test failure rather than as the setup
+	# doing exactly what the case asks for.
+	git -C "$dir" commit -qm seed --allow-empty >/dev/null 2>&1
+}
+
+run_step() { # $1=dir  $2=extensions  -> prints output, sets rc
+	( cd "$1" && HARD=500 SOFT=300 EXTS="$2" EXCLUDE="" bash "$WORK/step.sh" 2>&1 )
+}
+
+SH_EXTS="rs go ts tsx js jsx mjs cjs py sh astro vue svelte"
+YML_EXTS="$SH_EXTS yml yaml"
+
+# --- a shell script over the hard limit must fail -------------------------
+
+sandbox "$WORK/a" "scripts/huge.sh:600"
+out="$(run_step "$WORK/a" "$SH_EXTS")"; rc=$?
+check "a 600-line shell script fails the hard limit" "1" "$rc"
+check "and the error names the file" "1" \
+	"$(printf '%s' "$out" | grep -q 'scripts/huge.sh' && echo 1 || echo 0)"
+check "and gives the count it measured" "1" \
+	"$(printf '%s' "$out" | grep -q '600 code lines' && echo 1 || echo 0)"
+
+# --- comments and blanks are not code ------------------------------------
+
+sandbox "$WORK/b"
+mkdir -p "$WORK/b/scripts" "$WORK/b/scripts/quality"
+{ printf '#!/bin/sh\n'; for _ in $(seq 700); do printf '# comment\n\n'; done; } > "$WORK/b/scripts/comments.sh"
+git -C "$WORK/b" add -A && git -C "$WORK/b" commit -qm comments
+out="$(run_step "$WORK/b" "$SH_EXTS")"; rc=$?
+check "1400 lines of comments and blanks are not 1400 code lines" "0" "$rc"
+
+# --- a line that starts with `*` is code in a hash-comment language -----------
+#
+# The counter dropped every line starting with `*`, `//`, `/*` or `<!--` in every
+# language, so the patterns of a shell `case` (`*)`, `*[!0-9]*)`), which is most of
+# what a validation script is made of, never counted. The C-style comment forms
+# belong only to the languages that have them.
+
+sandbox "$WORK/f"
+mkdir -p "$WORK/f/scripts"
+# shellcheck disable=SC2016 # the planted file is meant to hold a literal $1
+{ printf 'case "$1" in\n'; for _ in $(seq 520); do printf '\t*) : ;;\n'; done; printf 'esac\n'; } > "$WORK/f/scripts/cases.sh"
+git -C "$WORK/f" add -A && git -C "$WORK/f" commit -qm cases
+out="$(run_step "$WORK/f" "$SH_EXTS")"; rc=$?
+check "522 lines of case patterns in a shell script fail the hard limit" "1" "$rc"
+check "and the count includes the patterns" "1" \
+	"$(printf '%s' "$out" | grep -q '522 code lines' && echo 1 || echo 0)"
+
+sandbox "$WORK/g"
+mkdir -p "$WORK/g/src"
+{ printf '/**\n'; for _ in $(seq 700); do printf ' * doc line\n'; done; printf ' */\n'; for _ in $(seq 700); do printf '// note\n'; done; } > "$WORK/g/src/docs.ts"
+git -C "$WORK/g" add -A && git -C "$WORK/g" commit -qm docs
+out="$(run_step "$WORK/g" "$SH_EXTS")"; rc=$?
+check "1400 lines of block and line comments in a TypeScript file are still not code" "0" "$rc"
+
+# --- the blindness this gate had until 2026-08-29 ------------------------
+#
+# A workflow over the limit passes when `yml` is absent from the extension
+# list, and the success line is identical to a real pass. That is not a bug in
+# the step, it is the step being told what to look at; the assertion exists so
+# that if the extension list is ever narrowed again, a test says so instead of
+# the check quietly reporting success on a file it never opened.
+
+sandbox "$WORK/c" ".github/workflows/huge.yml:600"
+out="$(run_step "$WORK/c" "$SH_EXTS")"; rc=$?
+check "a 600-line workflow passes when yml is not in the extension list" "0" "$rc"
+check "and says everything is within the limit, indistinguishably from a real pass" "1" \
+	"$(printf '%s' "$out" | grep -q 'within the' && echo 1 || echo 0)"
+
+out="$(run_step "$WORK/c" "$YML_EXTS")"; rc=$?
+check "the same file fails once yml is in the list" "1" "$rc"
+check "and the error names the workflow" "1" \
+	"$(printf '%s' "$out" | grep -q '.github/workflows/huge.yml' && echo 1 || echo 0)"
+
+# --- a list or a map is counted, and its comments are not ------------------
+#
+# The map that decides which suites a pull request runs was the largest file no
+# gate opened: `txt` was in no extension list. A `.txt` here holds `#` comments,
+# so the counter reads it the way it reads a script.
+
+TXT_EXTS="$YML_EXTS txt"
+sandbox "$WORK/h" "scripts/quality/scope/map.txt:600"
+out="$(run_step "$WORK/h" "$YML_EXTS")"; rc=$?
+check "a 600-line map passes while txt is not in the extension list" "0" "$rc"
+out="$(run_step "$WORK/h" "$TXT_EXTS")"; rc=$?
+check "the same map fails once txt is in the list" "1" "$rc"
+check "and the error names it with the count it measured" "1" \
+	"$(printf '%s' "$out" | grep -q 'scripts/quality/scope/map.txt has 600 code lines' && echo 1 || echo 0)"
+
+sandbox "$WORK/i"
+mkdir -p "$WORK/i/scripts"
+{ for _ in $(seq 800); do printf '# comment\n\n'; done; for _ in $(seq 250); do printf 'entry\n'; done; } > "$WORK/i/scripts/map.txt"
+git -C "$WORK/i" add -A && git -C "$WORK/i" commit -qm map
+out="$(run_step "$WORK/i" "$TXT_EXTS")"; rc=$?
+check "a map of 250 entries under 800 comment lines is not over the limit" "0" "$rc"
+check "and raises no warning, because the comments are not counted" "0" \
+	"$(printf '%s' "$out" | grep -c 'warning')"
+
+# The caller is what puts the extension in the list, so a caller that loses it
+# leaves the map unmeasured again without any case above turning red.
+caller_exts="$(sed -n 's/^ *extensions: "\(.*\)"$/\1/p' "$HERE/.github/workflows/tests.yml")"
+check "the caller opens .txt files" "1" "$(printf ' %s ' "$caller_exts" | grep -q ' txt ' && echo 1 || echo 0)"
+
+# --- the list is words, and only words ---------------------------------------
+#
+# The extensions become the alternatives of a regular expression, so a `|`, a `.*`,
+# a bracket or a star in one of them would select other files than it names. The
+# step refuses such a list instead of building the pattern, and says so; the list
+# the callers pass today, and the same words split by tabs and new lines, are
+# measured as before.
+
+sandbox "$WORK/j" "scripts/huge.sh:600"
+for bad in 'sh|.*' '.*' 'sh|yml' 'sh(' '[a-z]' 'sh*' 'sh.'; do
+	out="$(run_step "$WORK/j" "$bad")"; rc=$?
+	check "the extension list '$bad' is refused" "1" "$rc"
+	check "and it is refused for its shape, naming the extension" "1" \
+		"$(printf '%s' "$out" | grep -q 'is not made of letters and digits only' && echo 1 || echo 0)"
+	check "and no file is measured for it" "0" \
+		"$(printf '%s' "$out" | grep -c '600 code lines')"
+done
+
+for empty in '' '   '; do
+	out="$(run_step "$WORK/j" "$empty")"; rc=$?
+	check "an extension list with no word ('$empty') is refused" "1" "$rc"
+	check "and it is refused for naming nothing to measure" "1" \
+		"$(printf '%s' "$out" | grep -q 'names no extension' && echo 1 || echo 0)"
+done
+
+out="$(run_step "$WORK/j" "$SH_EXTS")"; rc=$?
+check "the list of today is measured and the 600-line script fails it" "1" "$rc"
+check "and the refusal of a shape is not what said so" "0" \
+	"$(printf '%s' "$out" | grep -c 'letters and digits only')"
+out="$(run_step "$WORK/j" "rs	go
+  sh   yml")"; rc=$?
+check "words split by a tab, a new line and repeated spaces are measured too" "1" "$rc"
+check "and the 600-line script is the one reported" "1" \
+	"$(printf '%s' "$out" | grep -q 'scripts/huge.sh has 600 code lines' && echo 1 || echo 0)"
+
+# --- vendored and minified files are skipped by design -------------------
+
+sandbox "$WORK/d" "vendor/big.sh:600" "app.min.js:600"
+out="$(run_step "$WORK/d" "$SH_EXTS")"; rc=$?
+check "vendored and minified files are exempt" "0" "$rc"
+
+# --- an untracked file is invisible, because git decides the file list ----
+
+sandbox "$WORK/e"
+yes 'x' | head -n 600 > "$WORK/e/untracked.sh"
+out="$(run_step "$WORK/e" "$SH_EXTS")"; rc=$?
+check "an untracked file is not checked" "0" "$rc"
+
+echo "$pass passed, $fail failed"
+printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
+[ "$fail" -eq 0 ]

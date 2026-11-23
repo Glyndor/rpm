@@ -1,0 +1,152 @@
+name: Line limit (reusable)
+
+# Enforce the file-size standard: warn past the soft limit, fail past the hard
+# limit. Language-agnostic: it scans tracked source files by extension. Counts
+# CODE lines only: blank lines and comment-only lines (including the required
+# doc comments) do not count, so documenting a public API never pushes a file
+# over the limit. The comment detection is a pragmatic heuristic (lines whose
+# first non-space character starts a line/block/doc/template comment).
+
+on:
+  workflow_call:
+    inputs:
+      hard-limit:
+        description: Files with more lines than this fail the build
+        type: number
+        default: 500
+      soft-limit:
+        description: Files with more lines than this emit a warning
+        type: number
+        default: 300
+      extensions:
+        description: Space-separated source file extensions to check
+        type: string
+        default: "rs go ts tsx js jsx mjs cjs py sh astro vue svelte"
+      exclude-pattern:
+        description: Optional extended regex; matching paths are skipped
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: line-limit-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  # Only a pull request supersedes its own earlier run. A push to main is a
+  # distinct commit that has to be judged on its own, and the suite-on-main
+  # watcher reads those verdicts; a cron run is never replaced by the next.
+  # Outside a pull request the group carries the run id: a group shared by
+  # pushes would still drop the older run that is waiting when a newer one
+  # queues, and two quick merges would lose the verdict of the first.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  line-limit:
+    name: line limit
+    # ubuntu-latest resolved to ubuntu-26.04 in apt's publish runs on
+    # 2026-11-20. The image is named because this job's verdict depends on the
+    # tools it ships, so a new image arrives as a commit and not overnight.
+    runs-on: ubuntu-26.04
+    # Bound: 4 to 14s measured. Ten times that, rounded up, never under ten
+    # minutes; the six-hour default is what a hang would otherwise cost.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      # Keep the required check present. Read the classifier from the PR base,
+      # so a changed helper cannot skip its own validation. First adoption (no
+      # base helper), unknown output or a failed diff means a full run.
+      - name: Decide whether line-limit is needed
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          SCOPE_JOB: line-limit
+          EXTS: ${{ inputs.extensions }}
+        run: |
+          set -euo pipefail
+          needed=true
+          script="$(mktemp "$RUNNER_TEMP/lint-scope.XXXXXX")"
+          trap 'rm -f "$script"' EXIT
+          if [ "$EVENT" = pull_request ] \
+            && git show HEAD^1:scripts/quality/scope/ci-job-scope.sh > "$script" 2>/dev/null; then
+            if decision="$(bash "$script" "$SCOPE_JOB")" \
+              && [[ "$decision" == true || "$decision" == false ]]; then
+              needed="$decision"
+            fi
+          fi
+          echo "needed=$needed" >> "$GITHUB_OUTPUT"
+          if [ "$needed" = false ]; then
+            echo "No changed inputs for $SCOPE_JOB; expensive steps skipped." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Running $SCOPE_JOB (changed inputs or scope not established)."
+          fi
+
+      - name: Check file lengths
+        if: steps.scope.outputs.needed != 'false'
+        env:
+          HARD: ${{ inputs.hard-limit }}
+          SOFT: ${{ inputs.soft-limit }}
+          EXTS: ${{ inputs.extensions }}
+          EXCLUDE: ${{ inputs.exclude-pattern }}
+        run: |
+          set -euo pipefail
+          # The list becomes the alternatives of a regular expression, so each
+          # extension has to be plain letters and digits first: a `|`, a `.*`,
+          # a bracket or a newline in the list would select other files than the
+          # ones it names. Split on any whitespace, refuse anything else, and
+          # refuse an empty list, which would measure nothing.
+          read -r -d '' -a words <<< "$EXTS" || true
+          if [ "${#words[@]}" -eq 0 ]; then
+            echo "::error::extensions names no extension, so no file would be measured"
+            exit 1
+          fi
+          for ext in "${words[@]}"; do
+            case "$ext" in
+              *[!A-Za-z0-9]*)
+                printf '::error::the extension %q is not made of letters and digits only\n' "$ext"
+                exit 1
+                ;;
+            esac
+          done
+          ext_re="$(IFS='|'; echo "${words[*]}")"
+          ext_pattern="\.(${ext_re})\$"
+          fail=0
+          while IFS= read -r -d '' f; do
+            [[ "$f" =~ $ext_pattern ]] || continue
+            [ -f "$f" ] || continue
+            case "$f" in
+              vendor/*|*/vendor/*|*.min.*) continue ;;
+            esac
+            if [ -n "$EXCLUDE" ] && echo "$f" | grep -qE "$EXCLUDE"; then
+              continue
+            fi
+            # `#` starts a comment only in hash-comment languages; in Rust it
+            # begins an attribute (#[...]/#![...]), so don't drop those lines.
+            # A `.txt` here is a list or a map that a tool of the repository
+            # reads, and its `#` lines are comments too.
+            case "$f" in
+              *.sh|*.bash|*.py|*.rb|*.pl|*.yml|*.yaml|*.toml|*.txt) hash_comment=1 ;;
+              *) hash_comment=0 ;;
+            esac
+            n="$(awk -v hc="$hash_comment" '
+              { line = $0; sub(/^[[:space:]]+/, "", line)
+                if (line == "") next
+                if (hc == 1) { if (line ~ /^#/) next }
+                else if (line ~ /^(\/\/|\*|\/\*|\*\/|<!--)/) next
+                code++ }
+              END { print code + 0 }' "$f")"
+            if [ "$n" -gt "$HARD" ]; then
+              echo "::error file=$f::$f has $n code lines (hard limit $HARD, split required)"
+              fail=1
+            elif [ "$n" -gt "$SOFT" ]; then
+              echo "::warning file=$f::$f has $n code lines (soft limit $SOFT, look for a split point)"
+            fi
+          done < <(git ls-files -z)
+          if [ "$fail" -ne 0 ]; then
+            echo "Some files exceed the ${HARD}-line hard limit."
+            exit 1
+          fi
+          echo "All checked files are within the ${HARD}-line hard limit."

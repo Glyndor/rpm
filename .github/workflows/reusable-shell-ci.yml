@@ -1,0 +1,395 @@
+name: Shell CI (reusable)
+
+# Lint every shell script in the repository: bash -n catches syntax errors,
+# shellcheck catches quoting, unset-variable and other correctness bugs.
+# Optionally runs the repository's shell test suite (`test-command`).
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Directory to scan for shell scripts
+        type: string
+        default: "."
+      severity:
+        description: Minimum shellcheck severity to report (style|info|warning|error)
+        type: string
+        default: "style"
+      shellcheck-version:
+        description: Exact shellcheck release tag to install from koalaman/shellcheck; bumped here and in the sibling channels together
+        type: string
+        default: "v0.11.0"
+      shellcheck-sha256:
+        description: sha256 of that release's linux.x86_64 tarball; travels with shellcheck-version, so overriding one without the other fails the install
+        type: string
+        default: "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
+      test-command:
+        description: Command running the repository's shell test suite (skipped when empty)
+        type: string
+        default: ""
+      apt-packages:
+        description: Space-separated apt packages the test suite needs
+        type: string
+        default: ""
+      skip-suite-paths:
+        description: >-
+          Space-separated globs. A pull request whose changed files ALL match
+          one of them skips the dependency install and the test run, and the
+          job still reports so the required check stays green. Empty (the
+          default) never skips. List only files the suite and the scripts it
+          runs do not read; the caller's own test must enforce that.
+        type: string
+        default: ""
+      check-exec-bit:
+        description: Fail when a script the workflows invoke as ./path is not executable in git
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shell-ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}-${{ inputs.working-directory }}
+  # Only a pull request supersedes its own earlier run. A push to main is a
+  # distinct commit that has to be judged on its own, and the suite-on-main
+  # watcher reads those verdicts; a cron run is never replaced by the next.
+  # Outside a pull request the group carries the run id: a group shared by
+  # pushes would still drop the older run that is waiting when a newer one
+  # queues, and two quick merges would lose the verdict of the first.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  shellcheck:
+    name: shellcheck
+    # ubuntu-latest resolved to ubuntu-26.04 in apt's publish runs on
+    # 2026-11-20. The image is named because this job's verdict depends on the
+    # tools it ships, so a new image arrives as a commit and not overnight.
+    runs-on: ubuntu-26.04
+    # Bound: 8 to 9s measured. Ten times that, rounded up, never under ten
+    # minutes; the six-hour default is what a hang would otherwise cost.
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    env:
+      SEVERITY: ${{ inputs.severity }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      # Keep the required check present. Read the classifier from the PR base,
+      # so a changed helper cannot skip its own validation. First adoption (no
+      # base helper), unknown output or a failed diff means a full run.
+      - name: Decide whether shellcheck is needed
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          SCOPE_JOB: shellcheck
+        run: |
+          set -euo pipefail
+          needed=true
+          script="$(mktemp "$RUNNER_TEMP/lint-scope.XXXXXX")"
+          trap 'rm -f "$script"' EXIT
+          if [ "$EVENT" = pull_request ] \
+            && git show HEAD^1:scripts/quality/scope/ci-job-scope.sh > "$script" 2>/dev/null; then
+            if decision="$(bash "$script" "$SCOPE_JOB")" \
+              && [[ "$decision" == true || "$decision" == false ]]; then
+              needed="$decision"
+            fi
+          fi
+          echo "needed=$needed" >> "$GITHUB_OUTPUT"
+          if [ "$needed" = false ]; then
+            echo "No changed inputs for $SCOPE_JOB; expensive steps skipped." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Running $SCOPE_JOB (changed inputs or scope not established)."
+          fi
+
+      - name: Collect shell scripts
+        if: steps.scope.outputs.needed != 'false'
+        run: |
+          set -euo pipefail
+          list="$RUNNER_TEMP/shell-files"
+          : > "$list"
+          # By extension.
+          find . -type f \( -name '*.sh' -o -name '*.bash' \) \
+            -not -path './.git/*' -print0 >> "$list"
+          # Extensionless scripts whose shebang names a shell (hooks, bin/ tools).
+          # Restricted to sh/bash/dash: shellcheck cannot lint ksh or zsh, and
+          # running it against them anyway produces false reds rather than
+          # real findings.
+          while IFS= read -r -d '' f; do
+            if head -n1 "$f" | grep -qE '^#!.*(/| )(sh|bash|dash)([[:space:]]|$)'; then
+              printf '%s\0' "$f" >> "$list"
+            fi
+          done < <(find . -type f ! -name '*.*' -not -path './.git/*' -print0)
+
+      - name: Install shellcheck
+        if: steps.scope.outputs.needed != 'false'
+        env:
+          SHELLCHECK_VERSION: ${{ inputs.shellcheck-version }}
+          SHELLCHECK_SHA256: ${{ inputs.shellcheck-sha256 }}
+        run: |
+          set -euo pipefail
+          # Pinned by version and by content. Every other tool here arrives
+          # through a registry that verifies what it hands over (Go's sumdb,
+          # crates.io, PyPI); this is a plain download, so the checksum is the
+          # only thing standing between us and whatever the transport returns.
+          # It has to land in a file first: piping curl into tar extracts the
+          # bytes before anything can check them.
+          dir="$RUNNER_TEMP/shellcheck-bin"
+          tarball="$RUNNER_TEMP/shellcheck.tar.xz"
+          mkdir -p "$dir"
+          curl -sSfL --proto =https --proto-redir =https --connect-timeout 10 --max-time 120 --max-filesize 16777216 -o "$tarball" \
+            "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          printf '%s  %s\n' "$SHELLCHECK_SHA256" "$tarball" | sha256sum -c -
+          tar -xJ -f "$tarball" -C "$dir" --strip-components=1 "shellcheck-${SHELLCHECK_VERSION}/shellcheck"
+          chmod +x "$dir/shellcheck"
+          echo "$dir" >> "$GITHUB_PATH"
+
+      - name: Syntax check
+        if: steps.scope.outputs.needed != 'false'
+        run: |
+          set -euo pipefail
+          list="$RUNNER_TEMP/shell-files"
+          [ -s "$list" ] || { echo "No shell scripts found; nothing to check."; exit 0; }
+          while IFS= read -r -d '' f; do
+            bash -n "$f"
+          done < "$list"
+
+      - name: Run shellcheck
+        if: steps.scope.outputs.needed != 'false'
+        run: |
+          set -euo pipefail
+          xargs -0 -r shellcheck --severity="$SEVERITY" < "$RUNNER_TEMP/shell-files"
+
+      # The collection above finds files by extension and by shebang, so it
+      # never sees the shell embedded in `run:` blocks -- several hundred lines
+      # per repository, and the lines that sign, publish and gate. This lints
+      # those too, from here rather than from the test suite, because the
+      # shellcheck installed above is pinned by version and sha256 while a test
+      # job's would be whatever the runner image ships that week.
+      #
+      # Skipped where the script is ABSENT, so a consumer that has not adopted it
+      # is not broken by bumping its pin. Present but not executable is a hard
+      # error rather than a second reason to skip: the first version of this
+      # step tested `-x` alone, both files landed as 100644 because
+      # `core.fileMode` was false in the clone, and the step reported "skipping"
+      # and passed. A gate that reads a broken adoption as no adoption opens
+      # itself, which is the exact failure this script exists to close.
+      - name: Lint the shell embedded in workflows
+        if: steps.scope.outputs.needed != 'false'
+        run: |
+          set -euo pipefail
+          script=./scripts/quality/lint/lint-workflow-shell.sh
+          if [ ! -e "$script" ]; then
+            echo "no $script in this repository; skipping"
+          elif [ ! -x "$script" ]; then
+            echo "::error file=scripts/quality/lint/lint-workflow-shell.sh::$script exists but git records it non-executable, so it would be silently skipped. Fix with: git update-index --chmod=+x scripts/quality/lint/lint-workflow-shell.sh" >&2
+            exit 1
+          else
+            "$script" "$SEVERITY"
+          fi
+
+      # A script invoked as `./path` needs the executable bit recorded IN GIT.
+      # `chmod +x` in a working tree is local state; the mode git stores is what
+      # reaches the runner, and when it disagrees the job dies with exit 126 and
+      # "Permission denied", a message about the file, not about the mode, which
+      # is why it costs a round trip to diagnose every time.
+      #
+      # This happened twice in one day in Glyndor/apt (2026-08-23): once on
+      # scripts/build/build-installers.sh, once on tests/build/build-installers.test.sh.
+      #
+      # Deliberately narrow. It does NOT assert that every `.sh` is 0755; that
+      # would be wrong. `apt/scripts/installer/install-template.sh` is a template that is
+      # read and substituted, never executed, and is correctly 0644; and repos
+      # that invoke their scripts as `bash path` (podup, helmly, unitpm, with 21
+      # non-executable scripts between them) have nothing to fix. The check is
+      # derived from how the workflows actually call each script, so a repo that
+      # never uses `./path` finds nothing and passes.
+      #
+      # Default is on rather than opt-in: the SHA pin is the buffer, so no
+      # consumer sees this until it deliberately bumps its pin, which is the
+      # moment to look at a new red.
+      - name: Scripts invoked by path must be executable in git
+        if: ${{ inputs.check-exec-bit && steps.scope.outputs.needed != 'false' }}
+        run: |
+          set -euo pipefail
+          # Every `./something.sh` mentioned anywhere in the calling repo's
+          # workflows. Paths are relative to the repo root, which is where the
+          # runner starts, so that is what the mode is checked against.
+          refs="$(grep -rhoE '\./[A-Za-z0-9_./-]+\.(sh|bash)' .github/workflows/ 2>/dev/null \
+                  | sed 's|^\./||' | LC_ALL=C sort -u || true)"
+          if [ -z "$refs" ]; then
+            echo "No script is invoked as ./path by any workflow; nothing to check."
+            exit 0
+          fi
+          rc=0
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            mode="$(git ls-files --stage -- "$f" | awk '{print $1}')"
+            if [ -z "$mode" ]; then
+              echo "note: $f is invoked as ./$f but is not tracked; skipping."
+              continue
+            fi
+            if [ "$mode" != "100755" ]; then
+              echo "::error file=$f::$f is invoked as ./$f but git records mode $mode; the job will fail with exit 126 (Permission denied). Fix with: git update-index --chmod=+x $f"
+              rc=1
+            fi
+          done <<EOF
+          $refs
+          EOF
+          [ "$rc" -eq 0 ] && echo "Every script invoked by path is executable in git."
+          exit "$rc"
+
+  test:
+    name: test
+    if: inputs.test-command != ''
+    # ubuntu-latest resolved to ubuntu-26.04 in apt's publish runs on
+    # 2026-11-20. The image is named because this job's verdict depends on the
+    # tools it ships, so a new image arrives as a commit and not overnight.
+    runs-on: ubuntu-26.04
+    # Bound: a ceiling, not ten times a current measurement. It was set from
+    # the worst run of this job across the three channels, 83s in apt, when
+    # that was written (before 2026-11-08). The suite has grown since: every
+    # suite of apt run one after the other took 519s on a workstation on
+    # 2026-11-21, and 434s on another that day, so 15 minutes is under twice
+    # what this job may now cost. The runner was not re-measured then; read the
+    # job time of recent runs before changing the number. The six-hour default
+    # is what a hang would otherwise cost.
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    env:
+      TEST_COMMAND: ${{ inputs.test-command }}
+      APT_PACKAGES: ${{ inputs.apt-packages }}
+    steps:
+      # Two commits: on a pull request the checkout is the merge commit, whose
+      # first parent is the base branch tip, so HEAD^1..HEAD is exactly what the
+      # pull request changes.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      # A pull request that touches only files the caller declared as unread by
+      # the suite (`skip-suite-paths`) skips the dependency install and the run
+      # and keeps the job, and therefore the required `shell / test` check,
+      # green. This is a step condition on purpose: a path filter on the
+      # workflow leaves a required check unreported. A skipped job reports
+      # Success, but here the job runs and records the reason for its skip.
+      #
+      # Nothing is skipped unless the caller opts in with a list, because which
+      # prose is inert differs per repository: README.md is read by tests in
+      # all three channel repositories, and docs/ by one of them.
+      #
+      # It fails open. Anything that is not clearly a pull request touching only
+      # listed paths -- a push, a schedule, an unreadable diff, an empty list, a
+      # path outside it -- runs the suite. A rename counts as both paths, so
+      # moving a script into a listed directory cannot hide the script.
+      - name: Decide whether the suite is needed
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          SKIP_PATHS: ${{ inputs.skip-suite-paths }}
+        run: |
+          set -euo pipefail
+          docs_only=false
+          if [ "$EVENT" = pull_request ] && [ -n "${SKIP_PATHS// /}" ] \
+            && files="$(git diff --name-only --no-renames HEAD^1 HEAD 2>/dev/null)" \
+            && [ -n "$files" ]; then
+            docs_only=true
+            set -f
+            while IFS= read -r f; do
+              matched=false
+              for pattern in $SKIP_PATHS; do
+                # shellcheck disable=SC2053 # the pattern is meant to glob
+                if [[ "$f" == $pattern ]]; then matched=true; break; fi
+              done
+              [ "$matched" = true ] || docs_only=false
+            done <<< "$files"
+            set +f
+          fi
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+          if [ "$docs_only" = true ]; then
+            echo "Only files the suite does not read changed, so the test suite was skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Which suites run is decided before anything is installed: the base
+      # commit's resolver reads the suite map and scripts/quality/scope/
+      # suite-dependencies.txt and answers with the packages the selected
+      # suites use, so a pull request that selects no suite needing a package
+      # does not pay for it. A repository without the map, or any answer the
+      # step cannot use, installs the whole list. The note lives here and not
+      # inside the script because the drift check compares the lines of a run
+      # block, comments included.
+      - name: Install test dependencies
+        if: steps.scope.outputs.docs_only != 'true'
+        env:
+          EVENT: ${{ github.event_name }}
+          SHELLCHECK_VERSION: ${{ inputs.shellcheck-version }}
+          SHELLCHECK_SHA256: ${{ inputs.shellcheck-sha256 }}
+        run: |
+          set -euo pipefail
+          # Decide before apt, using the BASE resolver and dependency map.
+          # Older consumers, unsupported commands and failed decisions keep
+          # the full caller list. The test runner and its gates stay unchanged.
+          packages="$APT_PACKAGES"
+          script="$(mktemp "$RUNNER_TEMP/package-scope.XXXXXX")" || script=""
+          trap 'rm -f "$script"' EXIT
+          if [ "$EVENT" = pull_request ] && [ -n "$script" ] \
+            && git show HEAD^1:scripts/quality/scope/ci-job-scope.sh > "$script" 2>/dev/null; then
+            if decision="$(bash "$script" packages)" \
+              && [[ "$decision" == packages=* && "$decision" != *$'\n'* ]]; then
+              packages="${decision#packages=}"
+            fi
+          fi
+          # The suites share one tool with the shellcheck job, which installs
+          # the pinned release of shellcheck. A suite that plants a
+          # violation and asks the linter to report it has to ask the same
+          # linter the gate uses, so `shellcheck` in the list means that
+          # release, verified the same way, and apt never installs it.
+          wanted=""
+          shellcheck_needed=false
+          # shellcheck disable=SC2086 # intentional word-splitting of the package list
+          for package in $packages; do
+            if [ "$package" = shellcheck ]; then
+              shellcheck_needed=true
+            else
+              wanted="${wanted:+$wanted }$package"
+            fi
+          done
+          if [ "$shellcheck_needed" = true ]; then
+            dir="$RUNNER_TEMP/shellcheck-bin"
+            tarball="$RUNNER_TEMP/shellcheck.tar.xz"
+            mkdir -p "$dir"
+            curl -sSfL --proto =https --proto-redir =https --connect-timeout 10 --max-time 120 --max-filesize 16777216 -o "$tarball" \
+              "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+            printf '%s  %s\n' "$SHELLCHECK_SHA256" "$tarball" | sha256sum -c -
+            tar -xJ -f "$tarball" -C "$dir" --strip-components=1 "shellcheck-${SHELLCHECK_VERSION}/shellcheck"
+            chmod +x "$dir/shellcheck"
+            echo "$dir" >> "$GITHUB_PATH"
+          fi
+          if [ -n "$wanted" ]; then
+            sudo apt-get update -qq
+            # shellcheck disable=SC2086 # intentional word-splitting of the package list
+            sudo apt-get install -y -qq $wanted
+          fi
+
+      # The guard in reusable-workflow-lint.yml already refuses a
+      # test-command written as a literal YAML block scalar (`|`), because
+      # each line of that scalar becomes its own shell statement and a bare
+      # `bash -c "$TEST_COMMAND"` returns the exit code of the LAST one, so
+      # an early failing suite would leave the required `shell / test` check
+      # green. I pass `-e -o pipefail` to the child here so the FIRST failing
+      # statement exits the job even if a future caller bypasses the guard:
+      # errexit is not inherited by the spawned shell, and this is the place
+      # that fixes that, since a `set -e` above this line never reaches the
+      # child.
+      - name: Run tests
+        if: steps.scope.outputs.docs_only != 'true'
+        run: |
+          set -euo pipefail
+          bash -e -o pipefail -c "$TEST_COMMAND"

@@ -1,0 +1,277 @@
+name: Dependabot freshness (reusable)
+
+# Fails when Dependabot has not opened a pull request recently enough in the
+# calling repository.
+#
+# The companion guard `reusable-schedule-freshness.yml` fails when a *workflow* stops
+# firing. Dependabot is not a workflow; it is an integration with its own
+# schedule, and a silent Dependabot emits nothing. "All up to date" and
+# "Dependabot is dead" produce the same signal: silence. This job converts
+# that silence into a red check on ordinary work, by treating the newest
+# dependabot-authored PR as the last time Dependabot spoke.
+#
+# Two differences from `reusable-schedule-freshness.yml`, both forced by Dependabot:
+#
+# 1. The signal is a pull request, not a workflow run. We cannot ask for the
+#    newest *scheduled* run of a Dependabot job because there is no such job;
+#    Dependabot runs as a GitHub integration. We list recent PRs across all
+#    states and pick the newest whose author is Dependabot.
+#
+# 2. The age threshold is higher than the schedule-freshness default. The
+#    "2× the period" rule is for workflows that fire on schedule; Dependabot
+#    only opens a PR when there is an upstream update, so a healthy but idle
+#    Dependabot is expected to be silent for stretches. 15 days is well above
+#    one missed run for a daily Dependabot, but still inside the window that
+#    catches a dead Dependabot (template-repository went the lifetime of the
+#    repo without one before this gate landed).
+#
+# 3. Silence is only an alarm when there was something to say. Measured
+#    2026-09-01 across the three channels: the newest Dependabot pull request
+#    was twelve days old, and every pinned action was already at its newest
+#    upstream tag, so the silence was the correct output of a live Dependabot
+#    with nothing to bump, and three days later this gate would have gone red
+#    in three repositories for it. So when the newest pull request is over
+#    the limit, the step reads every `uses: owner/repo@<sha>` pin in the
+#    caller's workflows and asks upstream (plain `git ls-remote`, no API)
+#    for the newest exact-semver tag, but only for the pins that carry a
+#    `# vX.Y.Z` comment. Over the limit AND a pin behind, or a pin whose tag
+#    cannot be read, or a pin without a version comment, is the failure;
+#    over the limit with every annotated pin current passes and says why.
+#    A pin nobody could read is never a pass: "cannot read it" is a failure,
+#    not a skip, and an unannotated pin is a failure for the same reason,
+#    not a silent current.
+#
+#    The actions are not the only ecosystem a caller can hand to Dependabot.
+#    Every `package-ecosystem: pip` entry of the caller's dependabot.yml names
+#    a directory, and the `name==version` pins of the requirement files in it
+#    get the same treatment against the newest release PyPI lists: a library
+#    pinned by hash moves only when something proposes the move, so a silent
+#    Dependabot and an old pin there is the alert too. A pip entry whose
+#    directory holds no pin, or a pin PyPI cannot answer for, is a failure.
+#
+# The caller is responsible for granting `contents: read`; a called workflow
+# cannot elevate beyond the permissions of the workflow that calls it, and
+# reading public PR history through the API needs that scope.
+#
+# Add the check only once Dependabot has opened at least one PR in the repo.
+# With nothing on record the job reports that as a failure, which for a
+# live Dependabot is exactly right (it means we cannot even prove Dependabot
+# is alive here).
+#
+# Default shell is pinned to bash: `date -u -d "$latest" +%s` is GNU-date
+# syntax, and a future Windows caller would otherwise silently mis-parse the
+# date and fail the arithmetic on an empty string.
+#
+# `concurrency:` cancels an in-flight run of a pull request when a newer one starts. The group
+# key uses `github.workflow` so an unrelated caller triggering the same
+# reusable does not collide, and `github.ref` to distinguish per-ref runs.
+
+on:
+  workflow_call:
+    inputs:
+      max-age-days:
+        description: >-
+          Fail when the newest Dependabot pull request is older than this.
+          Allow well above one missed run, since Dependabot only opens a PR
+          when there is an upstream update; 15 covers daily cadence.
+        type: number
+        required: true
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: dependabot-freshness-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  # Only a pull request supersedes its own earlier run. A push to main is a
+  # distinct commit that has to be judged on its own, and the suite-on-main
+  # watcher reads those verdicts; a cron run is never replaced by the next.
+  # Outside a pull request the group carries the run id: a group shared by
+  # pushes would still drop the older run that is waiting when a newer one
+  # queues, and two quick merges would lose the verdict of the first.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions: {}
+
+jobs:
+  freshness:
+    name: dependabot freshness
+    # ubuntu-latest on purpose: this job only asks GitHub or git for data and
+    # compares strings, so a new image cannot change its verdict.
+    runs-on: ubuntu-latest
+    # Bound: 5 to 29s measured, and it queries the API. Ten times that,
+    # rounded up, never under ten minutes; the six-hour default is what a
+    # hang would otherwise cost.
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the newest Dependabot pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          MAX_AGE_DAYS: ${{ inputs.max-age-days }}
+          WORKFLOWS_DIR: .github/workflows
+          DEPENDABOT_CONFIG: .github/dependabot.yml
+        run: |
+          set -euo pipefail
+          # Every third-party pin in the caller's workflows, as
+          # "owner/repo vX.Y.Z" when annotated, "owner/repo" otherwise.
+          # Prints one line per pin that is behind, whose upstream could not
+          # be read, or carries no version comment; prints nothing when every
+          # pin is annotated and at its newest upstream tag. The enumeration
+          # matches every `uses: ...@<40 hex>` pin that is a key (at the start
+          # of a line, after a list dash), the same shape the count below uses, so
+          # an unannotated pin cannot slip past as silent current while the
+          # success line claims it was inspected, and the text of a run: block
+          # that mentions `uses:` is not read as a pin.
+          pins_behind_upstream() {
+            grep -rhE '^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}' "${WORKFLOWS_DIR:-.github/workflows}" 2>/dev/null \
+              | sed -E 's/^[[:space:]]*(-[[:space:]]+)?//' \
+              | LC_ALL=C sort -u \
+              | while read -r line; do
+                  action="$(printf '%s' "$line" | sed -E 's|uses:[[:space:]]*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@[0-9a-f]{40}.*|\1|')"
+                  tag="$(printf '%s' "$line" | sed -nE 's|.*@[0-9a-f]{40}[[:space:]]*#[[:space:]]*(v[0-9][0-9A-Za-z.+-]*).*|\1|p')"
+                  if [ -z "$tag" ]; then
+                    echo "$action pinned without a version comment: cannot tell whether it is behind"
+                    continue
+                  fi
+                  if ! printf '%s' "$tag" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+                    echo "$action pinned as $tag: not an exact version, cannot tell whether it is behind"
+                    continue
+                  fi
+                  newest="$(git ls-remote --tags --refs "https://github.com/$action" 'refs/tags/v*' 2>/dev/null \
+                    | sed 's#.*refs/tags/##' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | LC_ALL=C sort -V | tail -n 1 || true)"
+                  if [ -z "$newest" ]; then
+                    echo "$action pinned as $tag: could not read upstream tags"
+                    continue
+                  fi
+                  if [ "$(printf '%s\n%s\n' "$tag" "$newest" | LC_ALL=C sort -V | tail -n 1)" != "$tag" ]; then
+                    echo "$action pinned as $tag, upstream has $newest"
+                  fi
+                done
+          }
+
+          # The pins of the requirement files the caller's dependabot.yml hands
+          # to the pip ecosystem, one per line as "pin <name> <version>", and
+          # "empty <directory>" for an entry whose directory holds no pin.
+          # Prints nothing when there is no pip entry or no dependabot.yml.
+          pip_pins() {
+            [ -f "${DEPENDABOT_CONFIG:-.github/dependabot.yml}" ] || return 0
+            python3 -I - "${DEPENDABOT_CONFIG:-.github/dependabot.yml}" <<'PY'
+          import glob
+          import os
+          import re
+          import sys
+
+          import yaml
+
+          config = yaml.safe_load(open(sys.argv[1])) or {}
+          for update in config.get("updates") or []:
+              if update.get("package-ecosystem") != "pip":
+                  continue
+              for directory in update.get("directories") or [update.get("directory") or "/"]:
+                  pins = 0
+                  for path in sorted(glob.glob(os.path.join("." + directory, "*requirements*.txt"))):
+                      for line in open(path):
+                          match = re.match(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([0-9]+(?:\.[0-9]+)*)(?![A-Za-z0-9.])", line)
+                          if match:
+                              print("pin", match.group(1), match.group(2))
+                              pins += 1
+                  if not pins:
+                      print("empty", directory)
+          PY
+          }
+
+          # The pip pins that are behind PyPI, whose newest release cannot be
+          # read, or that the entry does not hold; nothing when every one is
+          # at the newest release. Plain `curl` against the JSON API, bounded,
+          # and the answer is read with the standard library.
+          pip_pins_behind_upstream() {
+            pip_pins | while read -r kind name version; do
+              if [ "$kind" = empty ]; then
+                echo "pip: dependabot.yml hands $name to the pip ecosystem but no pinned requirement was found there"
+                continue
+              fi
+              newest="$(curl -fsSL --proto =https --proto-redir =https --connect-timeout 10 --max-time 30 --max-filesize 20971520 "https://pypi.org/pypi/$name/json" 2>/dev/null \
+                | python3 -I -c 'import json, sys; print(json.load(sys.stdin)["info"]["version"])' 2>/dev/null || true)"
+              if ! [[ "$newest" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+                echo "pip: $name pinned as $version: could not read the newest release from PyPI"
+                continue
+              fi
+              if [ "$(printf '%s\n%s\n' "$version" "$newest" | LC_ALL=C sort -V | tail -n 1)" != "$version" ]; then
+                echo "pip: $name pinned as $version, PyPI has $newest"
+              fi
+            done
+          }
+
+          # List recent PRs (any state), filter client-side for
+          # dependabot[bot], and pick the newest. Doing the filter and sort in
+          # jq avoids the GitHub API's known wrinkle where
+          # `state=all&sort=created&per_page=1` does not always include
+          # closed/merged PRs in the sort order one would expect, and depends
+          # on the bot author being a queryable user login (it is
+          # dependabot[bot], not the app slug `app/dependabot`).
+          #
+          # The window has to be paged, not fixed. A single page of 20 is a
+          # window on *total* PR activity, not on Dependabot's: in a busy
+          # repository the bot's newest pull request falls off the end and the
+          # check reports it as never having run. Measured on Glyndor/podup,
+          # where the twenty newest PRs contained none from Dependabot while
+          # ten sat within the newest forty, so the gate failed on a repository
+          # where Dependabot had opened ten pull requests that same day.
+          #
+          # Three pages of 100 is a 300-PR window, and the loop stops at the
+          # first page that yields a hit, so the common case still costs one
+          # request.
+          latest=""
+          pages_read=0
+          for page in 1 2 3; do
+            pages_read="$page"
+            latest=$(gh api \
+              "repos/${REPO}/pulls?state=all&per_page=100&page=${page}" \
+              --jq '[.[] | select(.user.login == "dependabot[bot]")] | sort_by(.created_at) | reverse | .[0].created_at // empty')
+            [ -n "$latest" ] && break
+          done
+
+          if [ -z "$latest" ]; then
+            echo "::error::No Dependabot pull request in the newest $((pages_read * 100)) for ${REPO}."
+            echo "Either Dependabot has never run here, or its schedule was dropped." >&2
+            echo "Check that dependabot.yml is on the default branch and touches the package ecosystem you expect," >&2
+            echo "then disable and re-enable Dependabot to re-register it." >&2
+            exit 1
+          fi
+
+          age_seconds=$(( $(date -u +%s) - $(date -u -d "$latest" +%s) ))
+          age_days=$(( age_seconds / 86400 ))
+
+          echo "Newest Dependabot pull request in ${REPO}: ${latest} (${age_days}d ago)."
+
+          if [ "$age_days" -gt "$MAX_AGE_DAYS" ]; then
+            # Silence is only an alarm when there was something to say.
+            behind="$(pins_behind_upstream; pip_pins_behind_upstream)"
+            pins="$(grep -rhoE '^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}' "${WORKFLOWS_DIR:-.github/workflows}" 2>/dev/null | sed -E 's/^[[:space:]]*(-[[:space:]]+)?//' | LC_ALL=C sort -u | wc -l | tr -d ' ')"
+            pip_count="$(pip_pins | grep -c '^pin ' || true)"
+            pip_note=""
+            if [ "$pip_count" -gt 0 ]; then
+              pip_note=" and so is every one of the ${pip_count} pinned pip requirement(s) at its newest PyPI release"
+            fi
+            if [ -z "$behind" ]; then
+              echo "::notice::Dependabot last opened a pull request ${age_days} days ago in ${REPO}, over the ${MAX_AGE_DAYS}-day limit, and every one of the ${pins} pinned action(s) is at its newest upstream tag${pip_note}; the silence has nothing to say."
+              echo "Passing: silent because there is nothing to bump."
+              exit 0
+            fi
+            echo "::error::Dependabot last opened a pull request ${age_days} days ago in ${REPO}, over the ${MAX_AGE_DAYS}-day limit, and it is not because there was nothing to bump:"
+            printf '%s\n' "$behind" | sed 's/^/  /'
+            echo "A silent Dependabot reports nothing, so treat this as the alert it never sent." >&2
+            echo "GitHub runs Dependabot on its own schedule, hours late; a small overrun right at the boundary" >&2
+            echo "is not the problem; a multiple of the period is. Check dependabot.yml is still on the default" >&2
+            echo "branch and that the package ecosystem is configured, then disable/enable Dependabot to" >&2
+            echo "re-register it, and check the next scheduled scan rather than the next few minutes." >&2
+            exit 1
+          fi
+
+          echo "Within the ${MAX_AGE_DAYS}-day limit."

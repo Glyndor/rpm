@@ -1,0 +1,256 @@
+name: CI
+
+# Every check a pull request has to pass, in one workflow, so that the order they
+# run in and the verdict they add up to are written in one place.
+#
+# The file is called tests.yml because the suite runner and the scope tests read
+# the caller of reusable-shell-ci.yml from that path, in every channel repository.
+#
+# ORDER. The checks that read a diff or a tree and finish in seconds run first and
+# in parallel (dco, empty-diff, commit-identity, secret-scan, folder-limit,
+# line-limit, workflow-lint). The test suite and the shell lint, which cost the
+# minutes, wait for all of them through `needs`: a pull request that is already
+# red for a missing sign-off does not install packages to run a suite. The job
+# that is skipped that way is never what turns the pull request red; the failed
+# job is.
+#
+# THE VERDICT. `gate` always runs and fails unless every job above it succeeded.
+# A skipped job reports Success, so a job that did not run (an `if:` somebody
+# added, a dependency that failed) would otherwise read as a pass; `gate` reads
+# the result of each job and accepts nothing but `success`.
+# tests/ci/policy/workflows/gate-job.test.sh holds both: every job of this file is
+# one `gate` waits for, and `shell` waits for every cheap check.
+#
+# PULL REQUEST ONLY. There is no push trigger. Pull requests merge by squash and
+# the ruleset requires the branch to be up to date, so the tree a push to main
+# would test is the tree the pull request just tested, and nothing reads the run.
+# Nothing here runs on a schedule either.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  # The reusables carry their own groups, so this one only names the jobs defined
+  # below. A newer push supersedes the run on the same pull request and nothing else.
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  dco:
+    uses: ./.github/workflows/reusable-dco.yml
+
+  empty-diff:
+    uses: ./.github/workflows/reusable-empty-diff.yml
+
+  # Two things history cannot take back, checked before a pull request merges: a
+  # personal email address in a commit, and something shaped like a credential in
+  # the lines it adds. Shell only, no third-party tooling, so neither job needs a
+  # secret or a network.
+  #
+  # Both jobs check out the head of the pull request, so the scripts in that
+  # checkout are the pull request's own. Each step therefore reads its script from
+  # the base commit and runs that copy: a change that rewrote a script to pass would
+  # otherwise be judged by itself. The one exception is the pull request that adds
+  # the script, whose base holds none; it runs its own copy once.
+  commit-identity:
+    name: commit identity
+    # ubuntu-latest on purpose: this job only asks git for data and compares
+    # strings, so a new image cannot change its verdict.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Every commit uses a GitHub noreply address
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          path=scripts/quality/hygiene/check-commit-identity.sh
+          check="$(mktemp "$RUNNER_TEMP/check-commit-identity.XXXXXX")"
+          base_commit="$(git rev-parse --verify "${BASE}^{commit}")"
+          listed="$(git ls-tree --name-only "$base_commit" -- "$path")"
+          if [ -n "$listed" ]; then
+            git show "$base_commit:$path" > "$check"
+          else
+            echo "The base commit has no $path; this pull request adds it and runs its own copy once."
+            cp "$path" "$check"
+          fi
+          bash "$check" "$base_commit" "$HEAD"
+
+  secret-scan:
+    name: secret scan
+    # ubuntu-latest on purpose: see commit-identity.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: The change adds no credential-shaped line
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          path=scripts/quality/hygiene/check-secrets.sh
+          scan="$(mktemp "$RUNNER_TEMP/check-secrets.XXXXXX")"
+          base_commit="$(git rev-parse --verify "${BASE}^{commit}")"
+          listed="$(git ls-tree --name-only "$base_commit" -- "$path")"
+          if [ -n "$listed" ]; then
+            git show "$base_commit:$path" > "$scan"
+          else
+            echo "The base commit has no $path; this pull request adds it and runs its own copy once."
+            cp "$path" "$scan"
+          fi
+          bash "$scan" "$base_commit" "$HEAD"
+
+  # Files per folder. Counting the tree takes under a second, so there is no scope
+  # decision to take. The script and its list of exceptions are read from the base
+  # commit by the script itself (BASE), so a pull request cannot raise a ceiling
+  # for itself.
+  folder-limit:
+    name: folder limit
+    # ubuntu-latest on purpose: see commit-identity.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: No folder holds more files than its ceiling
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          path=scripts/quality/structure/folder-limit.sh
+          gate="$(mktemp "$RUNNER_TEMP/folder-limit.XXXXXX")"
+          base_commit="$(git rev-parse --verify "${BASE}^{commit}")"
+          listed="$(git ls-tree --name-only "$base_commit" -- "$path")"
+          if [ -n "$listed" ]; then
+            git show "$base_commit:$path" > "$gate"
+          else
+            echo "The base commit has no $path; this pull request adds it and runs its own copy once."
+            cp "$path" "$gate"
+          fi
+          bash "$gate"
+
+  line-limit:
+    uses: ./.github/workflows/reusable-line-limit.yml
+    with:
+      # The reusable's default list has no `yml` and no `txt`, so the workflows and
+      # the maps the tools read would not be counted. Passed from the caller so
+      # this repository's choice stays visible here.
+      extensions: "rs go ts tsx js jsx mjs cjs py sh astro vue svelte yml yaml txt"
+
+  workflow-lint:
+    uses: ./.github/workflows/reusable-workflow-lint.yml
+
+  shell:
+    # The suite and the shell lint wait for the checks that finish in seconds.
+    needs: [dco, empty-diff, commit-identity, secret-scan, folder-limit, line-limit, workflow-lint]
+    uses: ./.github/workflows/reusable-shell-ci.yml
+    with:
+      # No path is skippable here: check-editorconfig walks every tracked file, so
+      # every file is an input of the suite's verdict.
+      test-command: >-
+        ./tests/ci/suites/check-suite-completeness.test.sh
+        ./tests/ci/docs/documented-test-command.test.sh
+        ./tests/ci/policy/rules/cancel-policy.test.sh
+        ./tests/ci/policy/rules/jobs-are-bounded.test.sh
+        ./tests/ci/policy/rules/locale-pinned.test.sh
+        ./tests/ci/policy/rules/network-calls-are-bounded.test.sh
+        ./tests/ci/policy/rules/workflow-network-calls-are-bounded.test.sh
+        ./tests/ci/policy/workflows/commit-hygiene-base-rule.test.sh
+        ./tests/ci/policy/workflows/gate-job.test.sh
+        ./tests/ci/policy/workflows/no-write-permissions.test.sh
+        ./tests/ci/policy/workflows/persist-credentials.test.sh
+        ./tests/ci/policy/workflows/pull-request-runs-are-superseded.test.sh
+        ./tests/ci/policy/workflows/required-check-names.test.sh
+        ./tests/ci/policy/workflows/workflow-files.test.sh
+        ./tests/ci/reusable/reusable-dco.test.sh
+        ./tests/ci/reusable/reusable-dependabot-freshness.test.sh
+        ./tests/ci/reusable/reusable-empty-diff.test.sh
+        ./tests/ci/reusable/reusable-line-limit.test.sh
+        ./tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh
+        ./tests/ci/reusable/reusable-schedule-freshness.test.sh
+        ./tests/ci/reusable/reusable-shell-ci.test.sh
+        ./tests/ci/reusable/reusable-workflow-lint.test.sh
+        ./tests/ci/suites/check-suite-completeness-verdict.test.sh
+        ./tests/ci/suites/ci-runs-every-test.test.sh
+        ./tests/ci/suites/lint-job-scope.test.sh
+        ./tests/ci/suites/shell-ci-scope.test.sh
+        ./tests/ci/suites/step-script.test.sh
+        ./tests/quality/coverage/check-suites-wired.test.sh
+        ./tests/quality/coverage/check-test-coverage.test.sh
+        ./tests/quality/hygiene/check-commit-identity.test.sh
+        ./tests/quality/hygiene/check-editorconfig.test.sh
+        ./tests/quality/hygiene/check-secrets.test.sh
+        ./tests/quality/lint/check-action-pins.test.sh
+        ./tests/quality/lint/check-test-job-not-switchable-checkout.test.sh
+        ./tests/quality/lint/check-test-job-not-switchable-context.test.sh
+        ./tests/quality/lint/check-test-job-not-switchable-inputs.test.sh
+        ./tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
+        ./tests/quality/lint/check-test-job-not-switchable-pins.test.sh
+        ./tests/quality/lint/check-test-job-not-switchable-steps.test.sh
+        ./tests/quality/lint/check-test-job-not-switchable.test.sh
+        ./tests/quality/lint/check-tooling-isolation.test.sh
+        ./tests/quality/lint/lint-workflow-shell.test.sh
+        ./tests/quality/scope/ci-job-scope-packages.test.sh
+        ./tests/quality/scope/ci-job-scope-suite-needed.test.sh
+        ./tests/quality/scope/ci-job-scope-suites.test.sh
+        ./tests/quality/scope/ci-job-scope.test.sh
+        ./tests/quality/scope/suite-scope-files.test.sh
+        ./tests/quality/scope/suite-scope-map.test.sh
+        ./tests/quality/structure/folder-limit.test.sh
+      apt-packages: shellcheck python3-yaml
+
+  gate:
+    name: gate
+    needs: [dco, empty-diff, commit-identity, secret-scan, folder-limit, line-limit, workflow-lint, shell]
+    # Without `always()` a failed dependency would skip this job, and a skipped job
+    # reports Success. It has to run to say that something did not.
+    if: always()
+    # ubuntu-latest on purpose: this job reads the results of the jobs above and
+    # compares strings, so a new image cannot change its verdict.
+    runs-on: ubuntu-latest
+    # Bound: it reads one JSON value. Five minutes bounds a hang.
+    timeout-minutes: 5
+    steps:
+      - name: Every job above succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          python3 -I - <<'PY'
+          import json
+          import os
+          import sys
+
+          needs = json.loads(os.environ["NEEDS"])
+          if not needs:
+              sys.exit("::error::this job waits for no other job, so it would pass having looked at nothing")
+          # The table is printed first, so a run that ended red shows what every job ended
+          # with and not only the one that failed. A caller of a reusable workflow can end
+          # in success when every job inside it was skipped, so the table is also where a
+          # reader sees which jobs the run had.
+          for job in sorted(needs):
+              print(f"{job:<16} {needs[job].get('result')}")
+          bad = sorted(f"{job} ended {info.get('result')}" for job, info in needs.items()
+                       if info.get("result") != "success")
+          for line in bad:
+              print(f"::error::{line}")
+          if bad:
+              sys.exit(1)
+          print(f"{len(needs)} job(s) succeeded")
+          PY
