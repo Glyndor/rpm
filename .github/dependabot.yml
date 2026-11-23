@@ -1,11 +1,29 @@
 version: 2
 
 updates:
+  # The only ecosystem this repository has today is the GitHub Actions its
+  # workflows use, every one pinned by SHA. The packages and the repository
+  # metadata are built by scripts and carry no manifest of their own, so there
+  # is no pip, npm, cargo or docker entry to add until a file of that kind exists.
+  #
+  # Patch and minor releases arrive together in one pull request and a major one
+  # in its own, so a change of major version is read on its own and never rides
+  # along with a routine bump.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "daily"
-    labels:
-      - "type:deps"
-      - "type:ci"
+    labels: ["type:deps", "type:ci"]
     open-pull-requests-limit: 10
+    groups:
+      actions-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+      actions-major:
+        patterns: ["*"]
+        update-types: ["major"]
+    # Dependabot infers a prefix from the commit history when this is absent, and
+    # the inference has been unstable across repositories. Set it so the title is
+    # predictable and matches apt, homebrew-tap and scoop-bucket.
+    commit-message:
+      prefix: chore
