@@ -205,6 +205,10 @@ tests/ci/suites/step-script.test.sh
 	tests/fixtures/ci/step-script.sh
 	tests/ci/suites/step-script.test.sh
 
+tests/keyring/archive-key.test.sh
+	keyring/**
+	tests/keyring/**
+
 tests/quality/coverage/check-suites-wired.test.sh
 	.github/**
 	scripts/**

@@ -192,6 +192,7 @@ jobs:
         ./tests/ci/suites/lint-job-scope.test.sh
         ./tests/ci/suites/shell-ci-scope.test.sh
         ./tests/ci/suites/step-script.test.sh
+        ./tests/keyring/archive-key.test.sh
         ./tests/quality/coverage/check-suites-wired.test.sh
         ./tests/quality/coverage/check-test-coverage.test.sh
         ./tests/quality/hygiene/check-commit-identity.test.sh
