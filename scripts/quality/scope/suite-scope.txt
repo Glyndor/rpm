@@ -96,6 +96,19 @@ tests/ci/policy/workflows/workflow-files.test.sh
 	tests/fixtures/ci/**
 	tests/ci/policy/workflows/**
 
+tests/ci/policy/workflows/dependabot-config.test.sh
+	.github/dependabot.yml
+	.github/workflows/**
+	**/requirements*.txt
+	**/pyproject.toml
+	**/Pipfile
+	**/package.json
+	**/Cargo.toml
+	**/go.mod
+	**/Dockerfile*
+	**/Containerfile*
+	tests/ci/policy/workflows/**
+
 tests/ci/policy/workflows/gate-job.test.sh
 	.github/workflows/tests.yml
 	tests/fixtures/ci/**

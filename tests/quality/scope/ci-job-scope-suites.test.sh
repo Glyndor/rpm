@@ -444,6 +444,13 @@ check "and the suites that walk every script" "1" \
 check "and none of the suites that read neither" "1" \
 	"$(lacks tests/ci/docs/documented-test-command.test.sh "$got")"
 
+real_repo dependabot; echo "updates: []" >> "$R/.github/dependabot.yml"; merge
+got="$(real_decide)"
+check "a change to dependabot.yml runs the configuration suite" "1" \
+	"$(has tests/ci/policy/workflows/dependabot-config.test.sh "$got")"
+check "a change to dependabot.yml does not run the secret scan suite" "1" \
+	"$(lacks tests/quality/hygiene/check-secrets.test.sh "$got")"
+
 # What watches the wiring of CI must run when the wiring changes: a change to a
 # workflow, to the map, to the rules or to the suites of CI that could take a suite
 # out of the run must not be able to merge without the suites that would notice.
