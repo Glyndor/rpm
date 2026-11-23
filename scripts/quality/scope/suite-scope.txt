@@ -1,0 +1,302 @@
+# suite-scope.txt -- which paths can change each suite's verdict.
+#
+# A pull request that touches none of the paths listed for a suite cannot change
+# what that suite concludes, so the suite does not have to run to learn what it
+# already knows. The decision is made by scripts/quality/scope/ci-job-scope.sh, in
+# its `suites` mode, and the job and its required checks `shell / test` and
+# `gate` report exactly as before.
+#
+# WHY IT IS SAFE
+#
+#   * It fails open, in every direction. A suite with no entry here always runs. A
+#     suite whose entry has no pattern is refused. A diff that cannot be read, a
+#     rename, a copy, a type change, a push, a schedule or a workflow dispatch runs
+#     every suite. A wrong skip lets a change merge untested; a wrong run costs
+#     seconds, and the asymmetry decides every borderline case in favour of running.
+#
+#   * The decision is taken with the resolver and this map as they are in the BASE
+#     commit, not as the pull request ships them, so a pull request that rewrites the
+#     map or the resolver to narrow its own scope gets the full set instead.
+#
+#   * The map, the resolver and the runner are an input of every suite. The rule is in
+#     ci-job-scope.sh and not in an entry per suite, so a suite added below later
+#     cannot forget it.
+#
+#   * The names of the suites here are the paths tests.yml passes to
+#     tests/ci/suites/check-suite-completeness.test.sh, so the workflow still names
+#     every suite and tests/ci/suites/ci-runs-every-test.test.sh still sees a
+#     complete list. Only the decision to EXECUTE a suite changes.
+#
+# HOW THE ENTRIES WERE DERIVED
+#
+# Each suite was run under strace and the files it opened were recorded, together
+# with the paths its text names, and the sets were widened to the folder that holds
+# them: a suite that read one file of scripts/quality/lint/ depends on that script
+# and on the suites that exercise it, because the next change there may be the one
+# it reads. A suite that WALKS a tree (`git ls-files`, `find`) depends on the whole
+# tree by name, so its entry is `**`: the .editorconfig check reads every tracked
+# file, which is why no path can be skipped as documentation only.
+#
+# PATTERN SYNTAX
+#
+#   *   matches within one path segment.
+#   ?   matches one character within one path segment.
+#   **  matches any number of segments, including none.
+#   A bare path matches that path exactly.
+#
+# HOW TO EXTEND IT
+#
+# A new suite arrives without an entry, so it always runs until somebody writes
+# one. When you add an entry, measure it the way this one was measured: run the
+# suite under strace and record the files it opens.
+#
+# ---------------------------------------------------------------------------
+
+tests/ci/docs/documented-test-command.test.sh
+	CONTRIBUTING.md
+	tests/ci/docs/**
+	tests/ci/suites/check-suite-completeness*.test.sh
+
+tests/ci/policy/rules/cancel-policy.test.sh
+	.github/workflows/**
+	tests/ci/policy/rules/**
+
+tests/ci/policy/rules/jobs-are-bounded.test.sh
+	.github/workflows/**
+	tests/ci/policy/rules/**
+
+tests/ci/policy/rules/locale-pinned.test.sh
+	.github/workflows/**
+	scripts/**
+	tests/ci/policy/rules/**
+
+tests/ci/policy/rules/network-calls-are-bounded.test.sh
+	scripts/**
+	tests/ci/policy/rules/**
+
+tests/ci/policy/rules/workflow-network-calls-are-bounded.test.sh
+	.github/workflows/**
+	tests/ci/policy/rules/**
+
+tests/ci/policy/workflows/commit-hygiene-base-rule.test.sh
+	.github/workflows/tests.yml
+	scripts/quality/hygiene/**
+	tests/fixtures/ci/**
+	tests/ci/policy/workflows/**
+
+tests/ci/policy/workflows/required-check-names.test.sh
+	.github/workflows/**
+	tests/fixtures/ci/**
+	tests/ci/policy/workflows/**
+
+tests/ci/policy/workflows/workflow-files.test.sh
+	.github/**
+	**/action.yml
+	**/action.yaml
+	tests/fixtures/ci/**
+	tests/ci/policy/workflows/**
+
+tests/ci/policy/workflows/gate-job.test.sh
+	.github/workflows/tests.yml
+	tests/fixtures/ci/**
+	tests/ci/policy/workflows/**
+
+tests/ci/policy/workflows/no-write-permissions.test.sh
+	.github/workflows/**
+	tests/ci/policy/workflows/**
+
+tests/ci/policy/workflows/persist-credentials.test.sh
+	.github/workflows/**
+	tests/ci/policy/workflows/**
+
+tests/ci/policy/workflows/pull-request-runs-are-superseded.test.sh
+	.github/workflows/**
+	tests/ci/policy/workflows/**
+
+tests/ci/reusable/reusable-dco.test.sh
+	.github/workflows/reusable-dco.yml
+	tests/fixtures/ci/**
+	tests/ci/reusable/**
+
+tests/ci/reusable/reusable-dependabot-freshness.test.sh
+	.github/dependabot.yml
+	.github/workflows/reusable-dependabot-freshness.yml
+	tests/fixtures/ci/**
+	tests/ci/reusable/**
+
+tests/ci/reusable/reusable-empty-diff.test.sh
+	.github/workflows/reusable-empty-diff.yml
+	tests/fixtures/ci/**
+	tests/ci/reusable/**
+
+tests/ci/reusable/reusable-line-limit.test.sh
+	.github/workflows/reusable-line-limit.yml
+	.github/workflows/tests.yml
+	tests/fixtures/ci/**
+	tests/ci/reusable/**
+
+tests/ci/reusable/reusable-schedule-freshness.test.sh
+	.github/workflows/reusable-schedule-freshness.yml
+	tests/fixtures/ci/**
+	tests/ci/reusable/**
+
+tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh
+	.github/workflows/reusable-schedule-freshness.yml
+	tests/ci/reusable/**
+
+tests/ci/reusable/reusable-shell-ci.test.sh
+	.github/workflows/reusable-shell-ci.yml
+	.github/workflows/tests.yml
+	scripts/quality/lint/lint-workflow-shell.sh
+	scripts/quality/scope/**
+	tests/ci/suites/check-suite-completeness.test.sh
+	tests/fixtures/ci/**
+	tests/ci/reusable/**
+
+tests/ci/reusable/reusable-workflow-lint.test.sh
+	scripts/quality/coverage/check-suites-wired.sh
+	scripts/quality/lint/check-test-job-not-switchable.sh
+	scripts/quality/lint/check-tooling-isolation.sh
+	.github/workflows/reusable-shell-ci.yml
+	.github/workflows/reusable-workflow-lint.yml
+	.github/workflows/tests.yml
+	scripts/quality/coverage/**
+	scripts/quality/lint/**
+	scripts/quality/scope/**
+	tests/ci/reusable/**
+
+tests/ci/suites/check-suite-completeness.test.sh
+	tests/ci/suites/**
+	scripts/quality/scope/**
+
+tests/ci/suites/check-suite-completeness-verdict.test.sh
+	tests/ci/suites/check-suite-completeness.test.sh
+	tests/ci/suites/check-suite-completeness-verdict.test.sh
+
+tests/ci/suites/ci-runs-every-test.test.sh
+	.github/workflows/**
+	scripts/quality/coverage/**
+	tests/**
+
+tests/ci/suites/lint-job-scope.test.sh
+	.github/workflows/reusable-*.yml
+	scripts/quality/scope/**
+	tests/ci/suites/**
+
+tests/ci/suites/shell-ci-scope.test.sh
+	.github/workflows/**
+	scripts/**
+	tests/**
+
+tests/ci/suites/step-script.test.sh
+	tests/fixtures/ci/step-script.sh
+	tests/ci/suites/step-script.test.sh
+
+tests/quality/coverage/check-suites-wired.test.sh
+	.github/**
+	scripts/**
+	tests/**
+
+tests/quality/coverage/check-test-coverage.test.sh
+	scripts/**
+	tests/**
+
+tests/quality/hygiene/check-commit-identity.test.sh
+	scripts/quality/hygiene/check-commit-identity.sh
+	tests/quality/hygiene/check-commit-identity.test.sh
+
+tests/quality/hygiene/check-editorconfig.test.sh
+	**
+
+tests/quality/hygiene/check-secrets.test.sh
+	scripts/quality/hygiene/check-secrets.sh
+	tests/quality/hygiene/check-secrets.test.sh
+
+tests/quality/lint/check-action-pins.test.sh
+	.github/workflows/**
+	scripts/quality/lint/check-action-pins.sh
+	tests/quality/lint/**
+
+tests/quality/lint/check-test-job-not-switchable-checkout.test.sh
+	.github/workflows/**
+	scripts/quality/lint/check-test-job-not-switchable.sh
+	tests/fixtures/ci/**
+	tests/quality/lint/**
+
+tests/quality/lint/check-test-job-not-switchable-context.test.sh
+	.github/workflows/**
+	scripts/quality/lint/check-test-job-not-switchable.sh
+	tests/fixtures/ci/**
+	tests/quality/lint/**
+
+tests/quality/lint/check-test-job-not-switchable-inputs.test.sh
+	.github/workflows/**
+	scripts/quality/lint/check-test-job-not-switchable.sh
+	tests/quality/lint/**
+
+tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
+	.github/workflows/**
+	scripts/quality/lint/check-test-job-not-switchable.sh
+	tests/fixtures/ci/**
+	tests/quality/lint/**
+
+tests/quality/lint/check-test-job-not-switchable-pins.test.sh
+	.github/workflows/**
+	scripts/quality/lint/check-test-job-not-switchable.sh
+	tests/fixtures/ci/**
+	tests/quality/lint/**
+
+tests/quality/lint/check-test-job-not-switchable-steps.test.sh
+	.github/workflows/**
+	scripts/quality/lint/check-test-job-not-switchable.sh
+	tests/fixtures/ci/**
+	tests/quality/lint/**
+
+tests/quality/lint/check-test-job-not-switchable.test.sh
+	.github/workflows/**
+	scripts/quality/lint/check-test-job-not-switchable.sh
+	tests/ci/suites/check-suite-completeness.test.sh
+	tests/quality/lint/**
+
+tests/quality/lint/check-tooling-isolation.test.sh
+	.github/workflows/**
+	scripts/quality/lint/check-tooling-isolation.sh
+	tests/quality/lint/**
+
+tests/quality/lint/lint-workflow-shell.test.sh
+	.github/workflows/**
+	scripts/quality/lint/lint-workflow-shell.sh
+	tests/quality/lint/**
+
+tests/quality/scope/ci-job-scope-packages.test.sh
+	scripts/quality/scope/**
+	tests/ci/suites/check-suite-completeness.test.sh
+	tests/quality/scope/**
+
+tests/quality/scope/ci-job-scope-suite-needed.test.sh
+	scripts/quality/scope/**
+	tests/ci/suites/check-suite-completeness.test.sh
+	tests/quality/scope/**
+
+tests/quality/scope/ci-job-scope-suites.test.sh
+	.github/workflows/tests.yml
+	scripts/quality/scope/**
+	tests/ci/suites/check-suite-completeness.test.sh
+	tests/quality/scope/**
+
+tests/quality/scope/ci-job-scope.test.sh
+	scripts/quality/scope/ci-job-scope.sh
+	tests/quality/scope/**
+
+tests/quality/scope/suite-scope-files.test.sh
+	**
+
+tests/quality/scope/suite-scope-map.test.sh
+	**
+
+tests/quality/structure/folder-limit.test.sh
+	.github/workflows/tests.yml
+	scripts/quality/structure/**
+	tests/fixtures/ci/**
+	tests/quality/structure/**
+
