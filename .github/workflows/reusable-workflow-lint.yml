@@ -1,0 +1,292 @@
+name: Workflow lint (reusable)
+
+# Lint the CALLING repository's own workflow YAML with actionlint: the release
+# workflows and other per-repo callers that live outside this repository and
+# are today validated by nobody. This is where the phantom-required-check
+# naming mismatches and the PowerShell $VAR-under-pwsh trap have actually
+# shipped, because nothing caught them before a consumer's CI ran for real.
+# Contrast with workflow-lint.yml in this repository: that one is this repo's own
+# self-CI over ITS reusables; this one runs actionlint over the CALLER's
+# checkout, wherever the calling job invokes it from.
+#
+# actionlint's embedded shellcheck pass otherwise falls back to whatever
+# shellcheck the runner image ships, which floats independently of the org's
+# pinned version (reusable-shell-ci.yml). Installing the same pinned shellcheck here
+# and pointing actionlint at it with -shellcheck keeps that pass reproducible
+# too.
+
+on:
+  workflow_call:
+    inputs:
+      shellcheck-version:
+        description: Exact shellcheck release tag to install from koalaman/shellcheck for actionlint's embedded shellcheck pass; bumped here and in the sibling channels together
+        type: string
+        default: "v0.11.0"
+      shellcheck-sha256:
+        description: sha256 of that release's linux.x86_64 tarball; travels with shellcheck-version, so overriding one without the other fails the install
+        type: string
+        default: "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
+      tooling-isolation:
+        description: Fail when a job that holds a secret also installs third-party tooling
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workflow-lint-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  # Only a pull request supersedes its own earlier run. A push to main is a
+  # distinct commit that has to be judged on its own, and the suite-on-main
+  # watcher reads those verdicts; a cron run is never replaced by the next.
+  # Outside a pull request the group carries the run id: a group shared by
+  # pushes would still drop the older run that is waiting when a newer one
+  # queues, and two quick merges would lose the verdict of the first.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  workflow-lint:
+    name: workflow-lint
+    # ubuntu-latest resolved to ubuntu-26.04 in apt's publish runs on
+    # 2026-11-20. The image is named because this job's verdict depends on the
+    # tools it ships, so a new image arrives as a commit and not overnight.
+    #
+    # The rule scripts import yaml and this job installs nothing for it: the
+    # image ships python3-yaml. That is not new: the same steps imported yaml
+    # inline on main before they moved to scripts, on ubuntu-latest, which
+    # resolved to ubuntu-26.04 on 2026-11-21. An image without it fails both
+    # rule steps with an ImportError, which is red, not a skip.
+    runs-on: ubuntu-26.04
+    # Bound: 15 to 28s measured, and it installs actionlint and shellcheck.
+    # Ten times that, rounded up, never under ten minutes; the six-hour
+    # default is what a hang would otherwise cost.
+    timeout-minutes: 10
+    env:
+      # The actionlint release this job installs, and the sha256 of that
+      # release's linux_amd64 tarball as its checksums file lists it. The two
+      # move together, here and in the sibling channels; a version changed
+      # without its hash fails the install. Dependabot does not read a version
+      # written here, so scripts/monitoring/check-tool-versions.sh compares it
+      # with upstream from freshness.yml.
+      ACTIONLINT_VERSION: v1.7.12
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      # The scripts that hold the rules of this job, and the list of exempt
+      # suites, are read from the base commit of a pull request: the commit
+      # the event names in github.event.pull_request.base.sha, fetched if the
+      # checkout lacks it, and not HEAD^1 of a checkout the pull request could
+      # point elsewhere. So the CONTENT of each rule is the base's, and a pull
+      # request that weakens a rule is judged by the rule as it was; its own
+      # suite tests the new form, which judges from the next pull request on.
+      # What this cannot hold is the workflow that runs the rules: this file
+      # comes from the pull request, and a change to it is for the owner's
+      # review of .github/workflows/, which CODEOWNERS routes to the owner, to
+      # catch, not this step.
+      #
+      # A base commit that cannot be fetched or read fails the job. When the
+      # path a script has now is not in the base, the base is searched for a file
+      # of the same name under scripts/quality/ at any depth: a pull request that
+      # moves a rule is judged by the base's copy at its earlier path, and the log
+      # says so, because moving a rule and weakening it in one change must not be
+      # a way to be judged by the weakened one. Two files of that name in the base
+      # fail the job, as there is no telling which is the rule. Only a base that
+      # holds no file of that name (a rule that is new) uses the checkout's copy,
+      # and says so. Another event uses the checkout's copies.
+      - name: Take the rule scripts from the base commit
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/lint-rules"
+          mkdir -p "$dir"
+          from_base=false
+          if [ "$EVENT" = pull_request ]; then
+            if ! [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::The pull request event names no base commit, so the rules cannot be read from it." >&2
+              exit 1
+            fi
+            if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+              git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || true
+            fi
+            if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+              echo "::error::Could not fetch the base commit ${BASE_SHA}, so the rules cannot be read from it." >&2
+              exit 1
+            fi
+            from_base=true
+          fi
+          # The path in the base commit of scripts/quality/$1: that path when the
+          # base has it, else the only file of that name under scripts/quality/
+          # at any depth, else nothing. Two of them are an error.
+          base_copy() {
+            local want="scripts/quality/$1" found count
+            if git cat-file -e "${BASE_SHA}:${want}" 2>/dev/null; then
+              printf '%s\n' "$want"
+              return 0
+            fi
+            found="$(git ls-tree -r --name-only "$BASE_SHA" -- scripts/quality | awk -F/ -v name="${1##*/}" '$NF == name')"
+            count="$(printf '%s' "$found" | grep -c . || true)"
+            if [ "$count" -gt 1 ]; then
+              echo "::error::The base commit ${BASE_SHA} holds ${count} files named ${1##*/} under scripts/quality/ ($(printf '%s' "$found" | tr '\n' ' ')), so it is not clear which one is the rule." >&2
+              return 1
+            fi
+            printf '%s\n' "$found"
+          }
+          for file in coverage/check-suites-wired.sh lint/check-test-job-not-switchable.sh lint/check-tooling-isolation.sh; do
+            name="${file##*/}"
+            from=""
+            if [ "$from_base" = true ]; then
+              from="$(base_copy "$file")"
+            fi
+            if [ -n "$from" ]; then
+              git show "${BASE_SHA}:${from}" > "$dir/$name"
+              if [ "$from" = "scripts/quality/${file}" ]; then
+                echo "$file read from the base commit ${BASE_SHA}."
+              else
+                echo "$file read from the base commit ${BASE_SHA} at its earlier path ${from}."
+              fi
+            else
+              if [ "$from_base" = true ]; then
+                echo "$file is not in the base commit ${BASE_SHA}, which holds no file of that name under scripts/quality/; the checkout's copy runs."
+              fi
+              cp "scripts/quality/${file}" "$dir/$name"
+            fi
+          done
+          if [ "$from_base" = true ]; then
+            from="$(base_copy coverage/suite-exemptions.txt)"
+            if [ -n "$from" ]; then
+              git show "${BASE_SHA}:${from}" > "$dir/suite-exemptions.base"
+            fi
+          fi
+
+      # Every suite under tests/ must be run by a workflow on a pull request.
+      #
+      # tests/ci/suites/ci-runs-every-test.test.sh asserts this from inside
+      # the test job, and a pull request that drops it from the test-command
+      # with other suites leaves that job green: the watcher shares the fate
+      # of the list it watches. This is a different job and a different
+      # check, so it sees the list emptied.
+      #
+      # It runs before the scope decision and on every event, because adding
+      # a suite without wiring it touches only tests/, which the scope below
+      # does not count as a workflow-lint input, and it reads two directories
+      # and costs about a second.
+      #
+      # The checker is the copy taken above. The list of exempt suites is a
+      # file of the repository, and on a pull request the base commit's copy
+      # is handed to the checker too, so the pull request cannot exempt what
+      # it unwires: the checker counts an exemption only when both copies
+      # carry it.
+      - name: Every suite is run by a workflow
+        run: |
+          set -euo pipefail
+          base_exemptions=""
+          if [ -f "$RUNNER_TEMP/lint-rules/suite-exemptions.base" ]; then
+            base_exemptions="$RUNNER_TEMP/lint-rules/suite-exemptions.base"
+          fi
+          SUITE_EXEMPTIONS_BASE="$base_exemptions" bash "$RUNNER_TEMP/lint-rules/check-suites-wired.sh" "$PWD"
+
+      # Keep the required check present. Read the classifier from the PR base,
+      # so a changed helper cannot skip its own validation. First adoption (no
+      # base helper), unknown output or a failed diff means a full run.
+      - name: Decide whether workflow-lint is needed
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          SCOPE_JOB: workflow-lint
+        run: |
+          set -euo pipefail
+          needed=true
+          script="$(mktemp "$RUNNER_TEMP/lint-scope.XXXXXX")"
+          trap 'rm -f "$script"' EXIT
+          if [ "$EVENT" = pull_request ] \
+            && git show HEAD^1:scripts/quality/scope/ci-job-scope.sh > "$script" 2>/dev/null; then
+            if decision="$(bash "$script" "$SCOPE_JOB")" \
+              && [[ "$decision" == true || "$decision" == false ]]; then
+              needed="$decision"
+            fi
+          fi
+          echo "needed=$needed" >> "$GITHUB_OUTPUT"
+          if [ "$needed" = false ]; then
+            echo "No changed inputs for $SCOPE_JOB; expensive steps skipped." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Running $SCOPE_JOB (changed inputs or scope not established)."
+          fi
+
+      - name: Install actionlint
+        if: steps.scope.outputs.needed != 'false'
+        run: |
+          set -euo pipefail
+          # The release's own binary, pinned by tag and checked against its
+          # sha256 before it is extracted, the same idiom as shellcheck below.
+          # It replaces `go install`, which compiled actionlint with whatever
+          # Go `stable` meant that day and kept the result in a cache keyed by
+          # the actionlint version alone, so the binary that ran was not one
+          # anybody had pinned.
+          dir="$RUNNER_TEMP/actionlint-bin"
+          tarball="$RUNNER_TEMP/actionlint.tar.gz"
+          mkdir -p "$dir"
+          curl -sSfL --proto =https --proto-redir =https --connect-timeout 10 --max-time 120 --max-filesize 16777216 -o "$tarball" \
+            "https://github.com/rhysd/actionlint/releases/download/${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION#v}_linux_amd64.tar.gz"
+          printf '%s  %s\n' "$ACTIONLINT_SHA256" "$tarball" | sha256sum -c -
+          tar -xz -f "$tarball" -C "$dir" actionlint
+          echo "$dir" >> "$GITHUB_PATH"
+
+      - name: Install shellcheck
+        if: steps.scope.outputs.needed != 'false'
+        env:
+          SHELLCHECK_VERSION: ${{ inputs.shellcheck-version }}
+          SHELLCHECK_SHA256: ${{ inputs.shellcheck-sha256 }}
+        run: |
+          set -euo pipefail
+          # Same verified-download idiom as reusable-shell-ci.yml: pinned by tag rather
+          # than whatever the runner image preinstalls, and checked against the
+          # release's sha256 before extraction, since a plain HTTPS fetch has no
+          # registry behind it vouching for what came back.
+          dir="$RUNNER_TEMP/shellcheck-bin"
+          tarball="$RUNNER_TEMP/shellcheck.tar.xz"
+          mkdir -p "$dir"
+          curl -sSfL --proto =https --proto-redir =https --connect-timeout 10 --max-time 120 --max-filesize 16777216 -o "$tarball" \
+            "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          printf '%s  %s\n' "$SHELLCHECK_SHA256" "$tarball" | sha256sum -c -
+          tar -xJ -f "$tarball" -C "$dir" --strip-components=1 "shellcheck-${SHELLCHECK_VERSION}/shellcheck"
+          chmod +x "$dir/shellcheck"
+          echo "SHELLCHECK_BIN=$dir/shellcheck" >> "$GITHUB_ENV"
+
+      - name: Run actionlint over the caller's workflows
+        if: steps.scope.outputs.needed != 'false'
+        env:
+          SHELLCHECK_BIN: ${{ env.SHELLCHECK_BIN }}
+        run: actionlint -color "-shellcheck=${SHELLCHECK_BIN}"
+
+      # A required job must not be switchable off: no job of any workflow, the
+      # reusables and the jobs that call nothing among them, carries a
+      # job-level `if:`, `needs:` or `continue-on-error:`, and no step a
+      # step-level `if:` or `continue-on-error:` (bar the few conditions the
+      # script lists by their exact form), every
+      # caller passes only the inputs the script lists for that reusable, every
+      # caller of reusable-shell-ci.yml passes a test-command that runs a
+      # suite, and at least one such caller exists. The rule and its reasons
+      # are in the script, taken from the base commit above. It runs here
+      # rather than in the shell job because that is the job an `if:` would
+      # skip, and a check inside it would share the fate of what it checks.
+      # BASE_SHA is the commit the event names: the extensions a caller of the
+      # line limit passes are held to the ones that commit's callers pass.
+      - name: A required test job must not be switchable off
+        if: steps.scope.outputs.needed != 'false'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }} # the floor of the extensions
+        run: bash "$RUNNER_TEMP/lint-rules/check-test-job-not-switchable.sh"
+
+      # A job that holds a secret must not install third-party tooling, since
+      # an installer runs code nobody here wrote with that secret in reach.
+      # The exemptions (a hash-pinned pip install, the distribution's own apt
+      # archive) and their edges are in the script.
+      - name: A job holding a secret must not install third-party tooling
+        if: ${{ inputs.tooling-isolation && steps.scope.outputs.needed != 'false' }}
+        run: bash "$RUNNER_TEMP/lint-rules/check-tooling-isolation.sh"
