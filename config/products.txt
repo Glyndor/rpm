@@ -1,0 +1,23 @@
+# The products the channel serves, one per line:
+#   name <TAB> kind <TAB> architectures <TAB> release workflow file <TAB> source ref
+#
+# kind `podman` is the release of Glyndor/podman, a package set per distribution id described
+# in podman-packages.txt. kind `static` is a product of one binary (or one architecture
+# independent package) that serves every distribution: its Release ends in `.glyndor.any`. kind `service` is a
+# static product that also installs a systemd unit: it carries the three scriptlets of the systemd macros and a closed
+# list of Requires (relations.txt, service-requires.txt, scriptlets.txt).
+# Architectures are `x86_64,aarch64`, or `noarch`. The workflow file is the one whose
+# provenance attestation must cover the release assets (gh attestation verify). The source ref is
+# `tag` when the product releases from its tag (the attestation must name refs/tags/<tag> and the
+# commit that tag points at), or the full ref (refs/heads/main) of a product that releases from a dispatch.
+#
+# A product with no `.rpm` asset in its latest release is skipped with a notice while the
+# channel serves nothing of it, and refuses the run once it is served: a product is never
+# dropped from the repository by a release that forgot its packages. helmly and
+# epistle-panel publish no rpm yet; the day they do, they are picked up with no change here.
+podman	podman	x86_64,aarch64	release.yml	tag
+podup	static	x86_64,aarch64	release.yml	tag
+epistle	static	x86_64,aarch64	release.yml	tag
+helmly-agent	static	x86_64,aarch64	release.yml	tag
+helmly	static	x86_64,aarch64	release-dashboard.yml	tag
+epistle-panel	static	noarch	release.yml	tag

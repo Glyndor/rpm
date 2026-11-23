@@ -1,0 +1,7 @@
+# The rich (boolean) dependencies a package kind may carry, each as the exact expression rpm lists, for one relation.
+# They are conditions evaluated on the host (`(a if b)`), so nothing but a line written here is accepted: a name that
+# begins with a parenthesis, or holds a space or a comparison, is refused unless it is listed. A kind that lists none
+# also refuses rpmlib(RichDependencies), which rpm adds by itself to a package that carries one.
+#
+# kind <TAB> relation <TAB> expression
+podman	requires	(container-selinux if selinux-policy)

@@ -1,0 +1,6 @@
+# Who may own a file other than root. Every file of a package belongs to root:root unless a line here says otherwise for
+# its kind and its path, as an extended regular expression matched against the whole canonical path (NAME is the name of
+# the package): the state a service writes under its own account, for example. Never under /usr, never a unit and never a
+# file anyone can execute, whatever is written here. Empty today: no package of ours has a service account.
+#
+# kind <TAB> path <TAB> user:group

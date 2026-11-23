@@ -1,0 +1,7 @@
+# The symbolic links a package kind may carry besides the ones its own path rules explain. A link is admitted when its
+# place is not one whose rule admits children and where it points (resolved by its text, against its folder) is a path
+# its own kind may install; this list is for the rest, and nothing is a link here that is not written, by place and by
+# target, as an extended regular expression matched against the whole canonical path (NAME is the package's name).
+#
+# kind <TAB> place <TAB> target
+companion	/usr/bin/(docker|podmansh)	/usr/bin/podman

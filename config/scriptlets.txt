@@ -1,0 +1,16 @@
+# The scriptlets a package kind may carry. A scriptlet runs as root on the host, so a package has
+# none unless its kind lists the sha256 of the exact text of all of them (the output of
+# `rpm -qp --qf '%{PREIN}%{PREINPROG}%{POSTIN}...'`, which admit-release.sh prints in the refusal so that
+# a pull request can add it after a person has read it). Triggers and file triggers are never allowed.
+# The podman package alone may carry a %pretrans and a %posttrans (and no other scriptlet), which keep the files an
+# administrator edited in /etc/containers across the replacement of the distribution's packages; its key is
+# `podman:<id>`, one row per id, with the hash of the exact text the contract fixes for that id. The contract
+# (podman-paquetes/contrato.md, 2.7) does not carry the text yet, so no row exists and an rpm of podman that has
+# the scriptlets is refused with the hash that would have to be listed.
+#
+# A `service` (a product that installs a systemd unit; none yet, epistle will) carries exactly the expansion of
+# %systemd_post, %systemd_preun and %systemd_postun_with_restart for its unit, and nothing else; its key is
+# `service:<product>` (`service:<product>:<id>` if it is ever built per id). The row is added, after a person has read the
+# text, with the hash the admission prints when it refuses the first package of the product.
+#
+# kind <TAB> sha256

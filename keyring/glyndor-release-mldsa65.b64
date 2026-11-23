@@ -1,0 +1,7 @@
+# ML-DSA-65 (FIPS 204) public half of the Glyndor release key, read by
+# scripts/verify/verify-release-sig.py to check <rpm>.mldsa65.sig beside <rpm>.sig.
+#
+# One base64 key per line, the raw 1952-byte public key, the same shape as
+# glyndor-release-ed25519.b64. Two lines during a rotation overlap; a signature
+# that cannot be checked is refused, so a signature without a key here fails the run.
+# Empty today: no release carries a second signature yet.

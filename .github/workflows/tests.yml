@@ -84,6 +84,34 @@ jobs:
             cp "$path" "$check"
           fi
           bash "$check" "$base_commit" "$HEAD"
+      - name: Install rpm, which orders the versions
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rpm
+      - name: The floor of a release only rises
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        # Judged with the script and the floor of the base commit, as the step above is: a change that lowers a floor
+        # cannot also edit what checks it. When the base has none yet, the change runs its own copy once.
+        run: |
+          set -euo pipefail
+          base_commit="$(git rev-parse --verify "${BASE}^{commit}")"
+          work="$(mktemp -d "$RUNNER_TEMP/floor.XXXXXX")"
+          for f in scripts/verify/check-floor-monotonic.sh scripts/verify/lib-evr.sh; do
+            if [ -n "$(git ls-tree --name-only "$base_commit" -- "$f")" ]; then
+              git show "$base_commit:$f" > "$work/$(basename "$f")"
+            else
+              echo "The base commit has no $f; this pull request adds it and runs its own copy once."
+              cp "$f" "$work/$(basename "$f")"
+            fi
+          done
+          if [ -n "$(git ls-tree --name-only "$base_commit" -- config/floor.txt)" ]; then
+            git show "$base_commit:config/floor.txt" > "$work/base-floor.txt"
+          else
+            : > "$work/base-floor.txt"
+          fi
+          bash "$work/check-floor-monotonic.sh" "$work/base-floor.txt" config/floor.txt
 
   secret-scan:
     name: secret scan
@@ -216,7 +244,19 @@ jobs:
         ./tests/quality/scope/suite-scope-files.test.sh
         ./tests/quality/scope/suite-scope-map.test.sh
         ./tests/quality/structure/folder-limit.test.sh
-      apt-packages: shellcheck python3-yaml
+        ./tests/config/channel-config.test.sh
+        ./tests/verify/admit-lib.test.sh
+        ./tests/verify/admit-release-entries.test.sh
+        ./tests/verify/admit-release-hardening.test.sh
+        ./tests/verify/admit-release-fields.test.sh
+        ./tests/verify/admit-release-pq.test.sh
+        ./tests/verify/admit-release-service.test.sh
+        ./tests/verify/admit-release.test.sh
+        ./tests/verify/check-floor-monotonic.test.sh
+        ./tests/verify/fetch-release.test.sh
+        ./tests/verify/lib-evr.test.sh
+        ./tests/verify/verify-release-sig.test.sh
+      apt-packages: shellcheck python3-yaml rpm python3-cryptography python3-venv
 
   gate:
     name: gate

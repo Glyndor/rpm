@@ -332,3 +332,82 @@ tests/quality/structure/folder-limit.test.sh
 	tests/fixtures/ci/**
 	tests/quality/structure/**
 
+
+tests/config/channel-config.test.sh
+	config/**
+	keyring/**
+	docs/product-contract.md
+	scripts/verify/admit-release.sh
+	tests/config/**
+
+tests/verify/admit-release.test.sh
+	config/**
+	keyring/**
+	scripts/verify/admit-release.sh
+	scripts/verify/verify-release-sig.py
+	tests/fixtures/rpm/**
+	tests/verify/**
+
+tests/verify/admit-release-fields.test.sh
+	config/**
+	keyring/**
+	scripts/verify/admit-release.sh
+	scripts/verify/verify-release-sig.py
+	tests/fixtures/rpm/**
+	tests/verify/**
+
+tests/verify/admit-release-pq.test.sh
+	config/**
+	keyring/**
+	scripts/verify/**
+	tests/fixtures/rpm/**
+	tests/verify/**
+
+tests/verify/admit-release-service.test.sh
+	config/**
+	keyring/**
+	scripts/verify/**
+	tests/fixtures/rpm/**
+	tests/verify/**
+
+tests/verify/admit-release-entries.test.sh
+	config/**
+	keyring/**
+	scripts/verify/**
+	tests/fixtures/rpm/**
+	tests/verify/**
+
+tests/verify/admit-release-hardening.test.sh
+	config/**
+	keyring/**
+	scripts/verify/**
+	tests/fixtures/rpm/**
+	tests/verify/**
+
+tests/verify/check-floor-monotonic.test.sh
+	scripts/verify/check-floor-monotonic.sh
+	scripts/verify/lib-evr.sh
+	config/floor.txt
+	.github/workflows/tests.yml
+	tests/verify/**
+
+tests/verify/fetch-release.test.sh
+	config/**
+	scripts/verify/fetch-release.sh
+	tests/fixtures/rpm/**
+	tests/verify/**
+
+tests/verify/verify-release-sig.test.sh
+	keyring/**
+	scripts/verify/verify-release-sig.py
+	tests/fixtures/rpm/**
+	tests/verify/**
+
+tests/verify/admit-lib.test.sh
+	scripts/verify/admit-lib.sh
+	config/**
+	tests/verify/**
+
+tests/verify/lib-evr.test.sh
+	scripts/verify/lib-evr.sh
+	tests/verify/**
