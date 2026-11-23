@@ -48,6 +48,16 @@ check "the components packaged beside podman, and the epoch of each" \
 check "no package has another name than the contract's" "catatonit conmon crun passt podman podman-docker podmansh" \
 	"$(rows "$P" | cut -f2 | sort -u | tr '\n' ' ' | sed 's/ $//')"
 
+# --- distributions --------------------------------------------------------------------------------
+D="$HERE/config/distros.txt"
+check "the repositories are the ids of the Podman set" "$(rows "$P" | cut -f1 | sort -u | tr '\n' ' ')" "$(rows "$D" | cut -f2 | sort | tr '\n' ' ')"
+check "every id is served for both architectures" 0 "$(rows "$D" | awk -F'\t' '$3 != "x86_64,aarch64"' | wc -l)"
+check "Leap and Tumbleweed are driven by zypper, the rest by dnf" "dnf dnf dnf dnf dnf zypper zypper" "$(rows "$D" | cut -f4 | tr '\n' ' ' | sed 's/ $//')"
+
+check "the folder of an id is the id, except Leap, whose folder is what \$releasever says" "leap16.1" "$(rows "$D" | awk -F'\t' '$1 != $2' | cut -f1)"
+check "the address forms measured on 2026-11-23" "amzn2023 el10 el9 fc\$releasever leap\$releasever tumbleweed" "$(rows "$D" | cut -f5 | sort -u | tr '\n' ' ' | sed 's/ $//')"
+check "the bootstrap package starts at release 1" "1" "$(rows "$HERE/config/glyndor-release.txt" | awk -F'\t' '$1 == "release" { print $2 }')"
+
 # --- relations ---------------------------------------------------------------------------------
 R="$HERE/config/relations.txt"
 check "each of the five package kinds has a rule for each of the eight relations" 40 "$(rows "$R" | wc -l)"

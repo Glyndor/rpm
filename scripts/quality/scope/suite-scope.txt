@@ -411,3 +411,54 @@ tests/verify/admit-lib.test.sh
 tests/verify/lib-evr.test.sh
 	scripts/verify/lib-evr.sh
 	tests/verify/**
+tests/build/sign-packages.test.sh
+	scripts/build/sign-packages.sh
+	tests/fixtures/rpm/**
+	tests/build/**
+
+tests/build/build-repo.test.sh
+	config/**
+	scripts/build/**
+	scripts/verify/repo-state.py
+	tests/fixtures/rpm/**
+	tests/build/**
+
+tests/verify/check-release-order.test.sh
+	config/**
+	scripts/build/**
+	scripts/verify/**
+	tests/fixtures/rpm/**
+	tests/verify/**
+
+tests/verify/repo-state.test.sh
+	config/**
+	scripts/build/**
+	scripts/verify/repo-state.py
+	tests/fixtures/rpm/**
+	tests/verify/**
+
+tests/verify/served-state.test.sh
+	config/**
+	scripts/build/**
+	scripts/verify/**
+	tests/fixtures/rpm/**
+	tests/verify/**
+
+tests/verify/verify-tree.test.sh
+	config/**
+	scripts/build/**
+	scripts/verify/**
+	tests/fixtures/rpm/**
+	tests/verify/**
+
+tests/build/repo-file.test.sh
+	config/**
+	keyring/**
+	scripts/build/**
+	tests/build/**
+
+tests/build/release-package.test.sh
+	config/**
+	keyring/**
+	scripts/build/**
+	tests/build/**

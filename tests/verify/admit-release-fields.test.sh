@@ -19,6 +19,11 @@ check() { # <description> <expected> <actual>
 	else fail=$((fail + 1)); echo "FAIL  $1 (want '$2', got '$3')"; fi
 }
 fx_init "$WORK"
+# the Podman cases attack one package at a time, so they build and admit one id (the whole set is admitted in admit-release.test.sh)
+export FX_ONLY_ID=el9
+fx_trimmed_config "$WORK/cfgq" el9
+REAL_ADMIT="$ADMIT"; ADMIT="$WORK/admit-q.sh"
+printf '#!/bin/sh\nexec "%s" --config "%s" "$@"\n' "$REAL_ADMIT" "$WORK/cfgq" > "$ADMIT"; chmod +x "$ADMIT"
 SRC="podup-1.2.3-1.glyndor.any.x86_64.rpm"
 fx_static_release "$WORK/base" podup 1.2.3 x86_64,aarch64
 fx_podman_release "$WORK/podman" 6.2.0 12
@@ -101,7 +106,7 @@ SH
 out="$(PATH="$WORK/binx:$PATH" "$ADMIT" --keyring "$WORK/keyring" podup v1.2.3 "$WORK/base" 2>&1)"; check "an rpm that lists almost no scriptlet tags is refused" 1 "$?"
 variant "$WORK/base" "$SRC" "${P[@]}" provides=podup post=true
 hash="$("$ADMIT" --keyring "$WORK/keyring" podup v1.2.3 "$WORK/v" 2>&1 | grep -oE 'sha256 [0-9a-f]{64}' | head -1 | cut -d' ' -f2)"
-rm -rf "$WORK/cfgs"; mkdir "$WORK/cfgs"; cp "$HERE/config/"* "$WORK/cfgs/"; printf 'static\t%s\n' "$hash" >> "$WORK/cfgs/scriptlets.txt"
+rm -rf "$WORK/cfgs"; mkdir "$WORK/cfgs"; cp "$WORK/cfgq/"* "$WORK/cfgs/"; printf 'static\t%s\n' "$hash" >> "$WORK/cfgs/scriptlets.txt"
 out="$("$ADMIT" --config "$WORK/cfgs" --keyring "$WORK/keyring" podup v1.2.3 "$WORK/v" 2>&1)"; check "a scriptlet whose exact text a person listed for the kind is admitted" 0 "$?"
 printf 'podman\t%s\n' "$hash" > "$WORK/cfgs/scriptlets.txt"
 out="$("$ADMIT" --config "$WORK/cfgs" --keyring "$WORK/keyring" podup v1.2.3 "$WORK/v" 2>&1)"; check "but not when the hash is listed for another kind" 1 "$?"
@@ -169,7 +174,7 @@ out="$("$ADMIT" --keyring "$WORK/keyring" podman v6.2.0+r12 "$WORK/v" 2>&1)"; rc
 check "a podman with a pretrans and a posttrans that nothing lists is refused" 1 "$rc"
 phash="$(printf '%s' "$out" | grep -oE 'sha256 [0-9a-f]{64}' | head -1 | cut -d' ' -f2)"
 check "and the refusal names the key podman:el9" 1 "$(printf '%s' "$out" | grep -c "for 'podman:el9'")"
-rm -rf "$WORK/cfgp"; mkdir "$WORK/cfgp"; cp "$HERE/config/"* "$WORK/cfgp/"; printf 'podman:el9\t%s\n' "$phash" >> "$WORK/cfgp/scriptlets.txt"
+rm -rf "$WORK/cfgp"; mkdir "$WORK/cfgp"; cp "$WORK/cfgq/"* "$WORK/cfgp/"; printf 'podman:el9\t%s\n' "$phash" >> "$WORK/cfgp/scriptlets.txt"
 out="$("$ADMIT" --config "$WORK/cfgp" --keyring "$WORK/keyring" podman v6.2.0+r12 "$WORK/v" 2>&1)"; check "the same text listed for el9 is admitted" 0 "$?"
 printf 'podman:fc45\t%s\n' "$phash" > "$WORK/cfgp/scriptlets.txt"
 out="$("$ADMIT" --config "$WORK/cfgp" --keyring "$WORK/keyring" podman v6.2.0+r12 "$WORK/v" 2>&1)"; check "the same text listed for another id is refused" 1 "$?"

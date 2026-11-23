@@ -27,7 +27,7 @@ fx_items() {
 fx_rpm() {
 	local out="$1" name="$2" version="$3" release="$4" arch="$5"; shift 5
 	local epoch="" vendor="Glyndor" packager="Glyndor <noreply@glyndor.net>" format=4
-	local requires="" recommends="" suggests="" supplements="" enhances="" post="" pretrans="" verifyscript="" preun="" preuntrans="" postuntrans="" posttrans="" dirs="" postun="" postprog="" pre="" symlink="" attr="" devfile="" bigfile="" dirattr="" owner="" payload="" trigger="" filetrigger="" provides="" obsoletes="" conflicts="" kv top spec rel
+	local buildtime="" requires="" recommends="" suggests="" supplements="" enhances="" post="" pretrans="" verifyscript="" preun="" preuntrans="" postuntrans="" posttrans="" dirs="" postun="" postprog="" pre="" symlink="" attr="" devfile="" bigfile="" dirattr="" owner="" payload="" trigger="" filetrigger="" provides="" obsoletes="" conflicts="" kv top spec rel
 	for kv in "$@"; do
 		case "$kv" in
 			epoch=*) epoch="${kv#*=}" ;; vendor=*) vendor="${kv#*=}" ;; packager=*) packager="${kv#*=}" ;;
@@ -36,6 +36,7 @@ fx_rpm() {
 			requires=*) requires="${kv#*=}" ;; recommends=*) recommends="${kv#*=}" ;; suggests=*) suggests="${kv#*=}" ;;
 			supplements=*) supplements="${kv#*=}" ;; enhances=*) enhances="${kv#*=}" ;; post=*) post="${kv#*=}" ;; pretrans=*) pretrans="${kv#*=}" ;;
 			verifyscript=*) verifyscript="${kv#*=}" ;; preun=*) preun="${kv#*=}" ;; preuntrans=*) preuntrans="${kv#*=}" ;; posttrans=*) posttrans="${kv#*=}" ;; postprog=*) postprog="${kv#*=}" ;; pre=*) pre="${kv#*=}" ;; symlink=*) symlink="${kv#*=}" ;; bigfile=*) bigfile="${kv#*=}" ;; dirattr=*) dirattr="${kv#*=}" ;; owner=*) owner="${kv#*=}" ;; attr=*) attr="${kv#*=}" ;; dev=*) devfile="${kv#*=}" ;; postun=*) postun="${kv#*=}" ;; dir=*) dirs="${kv#*=}" ;; postuntrans=*) postuntrans="${kv#*=}" ;;
+			buildtime=*) buildtime="${kv#*=}" ;;
 			file=*) payload="${kv#*=}" ;; trigger=*) trigger="${kv#*=}" ;; filetrigger=*) filetrigger="${kv#*=}" ;;
 		esac
 	done
@@ -84,7 +85,8 @@ fx_rpm() {
 		[ -z "$trigger" ] || printf '%%triggerin -- %s\ntrue\n' "$trigger"
 		[ -z "$filetrigger" ] || printf '%%transfiletriggerin -- %s\ntrue\n' "$filetrigger"
 	} > "$spec"
-	rpmbuild --define "_topdir $top" --define "_rpmformat $format" --define '_build_name_fmt %{NAME}.rpm' \
+	SOURCE_DATE_EPOCH="${buildtime:-$(date +%s)}" rpmbuild --define "_topdir $top" --define "_rpmformat $format" \
+		--define '_build_name_fmt %{NAME}.rpm' --define 'use_source_date_epoch_as_buildtime 1' --define 'source_date_epoch_from_changelog 0' \
 		--target "${arch}-linux" -bb "$spec" > "$top/log" 2>&1 || { cat "$top/log" >&2; return 1; }
 	rel="$(find "$top/RPMS" -name '*.rpm')"
 	mv "$rel" "$out/${name}-${version}-${release}.${arch}.rpm"
@@ -105,7 +107,8 @@ fx_static_release() {
 	done
 }
 
-# fx_podman_release <dir> <tag-version V> <R>: the whole set of config/podman-packages.txt
+# fx_podman_release <dir> <tag-version V> <R>: the whole set of config/podman-packages.txt, or the rows of one id when
+# FX_ONLY_ID is set (the suites that attack one package at a time build one id, and admit it with fx_trimmed_config)
 fx_podman_release() {
 	local dir="$1" v="$2" r="$3" id name akind epoch vrule arch ver rel
 	mkdir -p "$dir"
@@ -120,5 +123,14 @@ fx_podman_release() {
 			fx_rpm "$dir" "$name" "$ver" "$rel" "$arch" epoch="$epoch" provides="$prov" obsoletes="$obs" || return 1
 			fx_sign "$dir/${name}-${ver}-${rel}.${arch}.rpm"
 		done
-	done < <(grep -vE '^[[:space:]]*(#|$)' "$FX_REPO/config/podman-packages.txt")
+	done < <(grep -vE '^[[:space:]]*(#|$)' "$FX_REPO/config/podman-packages.txt" | awk -F'\t' -v i="${FX_ONLY_ID:-}" 'i == "" || $1 == i')
 }
+# fx_trimmed_config <dir> <id>: a copy of config/ whose Podman set is the rows of one id
+fx_trimmed_config() {
+	mkdir -p "$1"; cp "$FX_REPO/config/"* "$1/"
+	awk -F'\t' -v i="$2" '/^[[:space:]]*(#|$)/ || $1 == i' "$FX_REPO/config/podman-packages.txt" > "$1/podman-packages.txt"
+}
+
+fx_names() { find "$1" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort | tr '\n' ' ' | sed 's/ $//'; } # a folder's entries, one line
+fx_count() { find "$1" -type f -path "$2" | wc -l; } # files under <dir> whose path matches the glob
+fx_cat() { rpm2archive - < "$1" | tar -xzOf - ".$2"; } # <rpm> <absolute path>: one file of a package

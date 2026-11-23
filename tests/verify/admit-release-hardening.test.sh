@@ -18,6 +18,11 @@ check() { # <description> <expected> <actual>
 	else fail=$((fail + 1)); echo "FAIL  $1 (want '$2', got '$3')"; fi
 }
 fx_init "$WORK"
+# the Podman cases attack one package at a time, so they build and admit one id (the whole set is admitted in admit-release.test.sh)
+export FX_ONLY_ID=el9
+fx_trimmed_config "$WORK/cfgq" el9
+REAL_ADMIT="$ADMIT"; ADMIT="$WORK/admit-q.sh"
+printf '#!/bin/sh\nexec "%s" --config "%s" "$@"\n' "$REAL_ADMIT" "$WORK/cfgq" > "$ADMIT"; chmod +x "$ADMIT"
 SRC="podup-1.2.3-1.glyndor.any.x86_64.rpm"
 fx_static_release "$WORK/base" podup 1.2.3 x86_64,aarch64
 P=(podup 1.2.3 1.glyndor.any x86_64)
@@ -72,7 +77,7 @@ ADMIT_MAX_PAYLOAD_BYTES=1048576 run "${V[@]}" podup v1.2.3 "$WORK/v"
 check "a header that says 4 KiB over a payload of 4 MiB is refused all the same" 1 "$rc"
 
 # --- 5: the floor, as rpm orders versions -------------------------------------------------------------------------
-rm -rf "${WORK:?}/cfg"; mkdir "$WORK/cfg"; cp "$HERE/config/"* "$WORK/cfg/"
+rm -rf "${WORK:?}/cfg"; mkdir "$WORK/cfg"; cp "$WORK/cfgq/"* "$WORK/cfg/"
 fx_podman_release "$WORK/p10" 6.2.0 10; fx_podman_release "$WORK/p9" 6.2.0 9
 printf 'podman\tv6.2.0+r9\n' >> "$WORK/cfg/floor.txt"
 run --config "$WORK/cfg" "${V[@]}" podman v6.2.0+r10 "$WORK/p10"; check "r10 over a floor of r9 is admitted" 0 "$rc"

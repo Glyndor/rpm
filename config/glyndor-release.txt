@@ -1,0 +1,13 @@
+# The channel's own bootstrap package, `glyndor-release`, one per distribution id (architecture independent;
+# its Release ends in `.glyndor.<suffix>`). It installs the archive key and the repository file on the host, in
+# the folders the package manager reads, with `gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-glyndor`, so that
+# after the first install the key is the one on the disk and a new key or a rotation arrives as an upgrade
+# of this package, signed by the key already trusted.
+#
+# `release` is the number in the Release: it goes up by one in the pull request that changes anything the
+# package holds (the key, the repository file, so also config/distros.txt or the product list). A change
+# without it is a package with the same name, version and release and other bytes, which the repository
+# refuses to publish. `epoch` is the build time every file and the header carry, fixed so that the package is
+# the same bytes in every run; it must be later than the creation of the archive key.
+release	1
+epoch	1795392000

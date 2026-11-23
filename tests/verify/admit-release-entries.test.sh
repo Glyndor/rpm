@@ -19,6 +19,11 @@ check() { # <description> <expected> <actual>
 	else fail=$((fail + 1)); echo "FAIL  $1 (want '$2', got '$3')"; fi
 }
 fx_init "$WORK"
+# the Podman cases attack one package at a time, so they build and admit one id (the whole set is admitted in admit-release.test.sh)
+export FX_ONLY_ID=el9
+fx_trimmed_config "$WORK/cfgq" el9
+REAL_ADMIT="$ADMIT"; ADMIT="$WORK/admit-q.sh"
+printf '#!/bin/sh\nexec "%s" --config "%s" "$@"\n' "$REAL_ADMIT" "$WORK/cfgq" > "$ADMIT"; chmod +x "$ADMIT"
 SRC="podup-1.2.3-1.glyndor.any.x86_64.rpm"
 fx_static_release "$WORK/base" podup 1.2.3 x86_64,aarch64
 fx_podman_release "$WORK/podman" 6.2.0 12
@@ -106,7 +111,7 @@ refused "docker as a link to something else" podman v6.2.0+r12 "which its kind m
 # --- who owns what: root, unless a line of config/owners.txt says otherwise, and never under /usr -----------------
 variant "$WORK/base" "$SRC" "${P[@]}" provides=podup owner=nobody:nobody:/var/lib/podup/state
 refused "a file of the account nobody, with no line that lists it" podup v1.2.3 "owned by 'nobody:nobody'"
-rm -rf "$WORK/cfgo"; mkdir "$WORK/cfgo"; cp "$HERE/config/"* "$WORK/cfgo/"
+rm -rf "$WORK/cfgo"; mkdir "$WORK/cfgo"; cp "$WORK/cfgq/"* "$WORK/cfgo/"
 printf 'static\t/var/lib/NAME(/.*)?\tnobody:nobody\n' >> "$WORK/cfgo/owners.txt"
 run_cfg() { rc=0; out="$("$ADMIT" --config "$WORK/cfgo" --keyring "$WORK/keyring" "$1" "$2" "$WORK/v" 2>&1)" || rc=$?; }
 run_cfg podup v1.2.3; check "the same file, with a line that lists the path and the account, is admitted" 0 "$rc"

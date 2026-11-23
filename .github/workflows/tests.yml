@@ -193,6 +193,8 @@ jobs:
       # every file is an input of the suite's verdict.
       test-command: >-
         ./tests/ci/suites/check-suite-completeness.test.sh
+        ./tests/build/release-package.test.sh
+        ./tests/build/repo-file.test.sh
         ./tests/ci/docs/documented-test-command.test.sh
         ./tests/ci/policy/rules/cancel-policy.test.sh
         ./tests/ci/policy/rules/jobs-are-bounded.test.sh
@@ -244,6 +246,8 @@ jobs:
         ./tests/quality/scope/suite-scope-files.test.sh
         ./tests/quality/scope/suite-scope-map.test.sh
         ./tests/quality/structure/folder-limit.test.sh
+        ./tests/build/build-repo.test.sh
+        ./tests/build/sign-packages.test.sh
         ./tests/config/channel-config.test.sh
         ./tests/verify/admit-lib.test.sh
         ./tests/verify/admit-release-entries.test.sh
@@ -253,10 +257,14 @@ jobs:
         ./tests/verify/admit-release-service.test.sh
         ./tests/verify/admit-release.test.sh
         ./tests/verify/check-floor-monotonic.test.sh
+        ./tests/verify/check-release-order.test.sh
         ./tests/verify/fetch-release.test.sh
         ./tests/verify/lib-evr.test.sh
+        ./tests/verify/repo-state.test.sh
+        ./tests/verify/served-state.test.sh
         ./tests/verify/verify-release-sig.test.sh
-      apt-packages: shellcheck python3-yaml rpm python3-cryptography python3-venv
+        ./tests/verify/verify-tree.test.sh
+      apt-packages: shellcheck python3-yaml rpm createrepo-c python3-cryptography python3-venv
 
   gate:
     name: gate
