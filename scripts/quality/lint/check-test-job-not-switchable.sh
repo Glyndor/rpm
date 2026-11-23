@@ -295,10 +295,6 @@ PATH_WORD_RE = re.compile(r"[A-Za-z0-9_./*-]*[A-Za-z0-9_][A-Za-z0-9_./*-]*")
 # (workflow file, step id or job id) pairs; see the header.
 PRODUCER_REF = re.compile(r"\b(steps|needs)\.([A-Za-z0-9_-]+)\.outputs\b")
 PRODUCERS_MAY_CHANGE = ()
-# rpm and pacman adopt the reusables in their first pull request, so no base commit holds the `scope` steps
-# yet and none can vouch for them. They are listed for that pull request only, and the pull request after
-# it removes this line: from then on the base holds them, and a change to one needs the two-pull-request path.
-ADOPTING_PRODUCERS = tuple((_W + f"reusable-{n}.yml", "scope") for n in ("line-limit", "shell-ci", "workflow-lint"))
 
 # A script run from the checkout, at the start of a command: a path under one of
 # these folders, alone or after an interpreter. `git show <rev>:<path>` is not one.
@@ -552,9 +548,8 @@ def producer_refusals(base, path, spec):
                 continue
             before = producer_parts(old, kind, job_id, ident, base, False)
             if before is None:
-                if (path, ident) not in ADOPTING_PRODUCERS:
-                    found.append(f"{what} in {path} writes outputs a condition reads and is new in this pull request, "
-                                 "so the base commit cannot vouch for it.")
+                found.append(f"{what} in {path} writes outputs a condition reads and is new in this pull request, "
+                             "so the base commit cannot vouch for it.")
                 continue
             diff = list(dict.fromkeys(n for n in [*now, *before] if now.get(n) != before.get(n)))
             if diff and (path, ident) not in PRODUCERS_MAY_CHANGE:

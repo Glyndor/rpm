@@ -76,20 +76,6 @@ printf '%s' "$SCOPE_FILE" > "$G/.github/workflows/freshness.yml"
 verdict "a producer and its reader that both arrive in the pull request are refused" 1
 check "and the refusal says the base cannot vouch for it" "1" "$(said "$out" 'is new in this pull request')"
 
-# The first pull request that adopts a reusable has no base that holds its producer.
-# A copy of the rule that lists the step for adoption accepts it, the rule as it ships
-# lists nothing but the three reusables of the channels, and a listed step that
-# also differs from a base that has it is still refused.
-base_repo
-rm "$G/.github/workflows/freshness.yml"; gitg add -A; gitg commit -qm 'without it'; BASE="$(gitg rev-parse HEAD)"
-printf '%s' "$SCOPE_FILE" > "$G/.github/workflows/freshness.yml"
-sed 's|^ADOPTING_PRODUCERS = .*|ADOPTING_PRODUCERS = ((".github/workflows/freshness.yml", "scope"),)|' "$SCRIPT" > "$WORK/adopting.sh"
-out="$(run_base "$G" "$BASE" "$WORK/adopting.sh")"; rc=$?
-check "a producer that arrives with the pull request is accepted where the rule lists it for adoption" "0" "$rc"
-check "the rule as it ships lists the scope step of three reusables and nothing else" \
-	"reusable-line-limit.yml reusable-shell-ci.yml reusable-workflow-lint.yml" \
-	"$(sed -n 's|^ADOPTING_PRODUCERS = .*for n in (\(.*\))).*|\1|p' "$SCRIPT" | tr -d '",' | sed 's/line-limit/reusable-line-limit.yml/; s/shell-ci/reusable-shell-ci.yml/; s/workflow-lint/reusable-workflow-lint.yml/' | tr -s ' ')"
-
 base_repo
 printf 'jobs: [\n' > "$G/.github/workflows/freshness.yml"; gitg add -A; gitg commit -qm 'broken'; BASE="$(gitg rev-parse HEAD)"
 printf '%s' "$SCOPE_FILE" > "$G/.github/workflows/freshness.yml"
