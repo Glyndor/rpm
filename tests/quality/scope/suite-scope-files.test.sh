@@ -87,6 +87,16 @@ for f in tracked:
 for f in ("scripts/quality/scope/ci-job-scope.sh", "tests/ci/suites/check-suite-completeness.test.sh"):
     subprocess.run(["cp", os.path.join(here, f), os.path.join(repo, f)], check=True)
 subprocess.run(["cp", map_path, os.path.join(repo, "scripts/quality/scope/suite-scope.txt")], check=True)
+# A change to a workflow or an action keeps every suite, by rule of the resolver. This test reads what the
+# map says by itself, so the copy it runs has that rule taken out.
+resolver = os.path.join(repo, "scripts/quality/scope/ci-job-scope.sh")
+with open(resolver) as fh:
+    text = fh.read()
+for line in ('    ".github/workflows/**",\n', '    ".github/actions/**",\n'):
+    assert line in text
+    text = text.replace(line, "")
+with open(resolver, "w") as fh:
+    fh.write(text)
 git("add", "-A")
 git("commit", "-qm", "base")
 base = git("rev-parse", "HEAD").stdout.decode().strip()

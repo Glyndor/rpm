@@ -169,6 +169,7 @@ tests/ci/reusable/reusable-shell-ci.test.sh
 tests/ci/reusable/reusable-workflow-lint.test.sh
 	scripts/quality/coverage/check-suites-wired.sh
 	scripts/quality/lint/check-test-job-not-switchable.sh
+	scripts/quality/lint/switch-rule-forms.json
 	scripts/quality/lint/check-tooling-isolation.sh
 	.github/workflows/reusable-shell-ci.yml
 	.github/workflows/reusable-workflow-lint.yml
@@ -237,41 +238,55 @@ tests/quality/lint/check-action-pins.test.sh
 tests/quality/lint/check-test-job-not-switchable-checkout.test.sh
 	.github/workflows/**
 	scripts/quality/lint/check-test-job-not-switchable.sh
+	scripts/quality/lint/switch-rule-forms.json
 	tests/fixtures/ci/**
 	tests/quality/lint/**
 
 tests/quality/lint/check-test-job-not-switchable-context.test.sh
 	.github/workflows/**
 	scripts/quality/lint/check-test-job-not-switchable.sh
+	scripts/quality/lint/switch-rule-forms.json
 	tests/fixtures/ci/**
 	tests/quality/lint/**
 
 tests/quality/lint/check-test-job-not-switchable-inputs.test.sh
 	.github/workflows/**
 	scripts/quality/lint/check-test-job-not-switchable.sh
+	scripts/quality/lint/switch-rule-forms.json
 	tests/quality/lint/**
 
 tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
 	.github/workflows/**
 	scripts/quality/lint/check-test-job-not-switchable.sh
+	scripts/quality/lint/switch-rule-forms.json
 	tests/fixtures/ci/**
 	tests/quality/lint/**
 
 tests/quality/lint/check-test-job-not-switchable-pins.test.sh
 	.github/workflows/**
 	scripts/quality/lint/check-test-job-not-switchable.sh
+	scripts/quality/lint/switch-rule-forms.json
+	tests/fixtures/ci/**
+	tests/quality/lint/**
+
+tests/quality/lint/check-test-job-not-switchable-forms.test.sh
+	.github/workflows/**
+	scripts/quality/lint/check-test-job-not-switchable.sh
+	scripts/quality/lint/switch-rule-forms.json
 	tests/fixtures/ci/**
 	tests/quality/lint/**
 
 tests/quality/lint/check-test-job-not-switchable-steps.test.sh
 	.github/workflows/**
 	scripts/quality/lint/check-test-job-not-switchable.sh
+	scripts/quality/lint/switch-rule-forms.json
 	tests/fixtures/ci/**
 	tests/quality/lint/**
 
 tests/quality/lint/check-test-job-not-switchable.test.sh
 	.github/workflows/**
 	scripts/quality/lint/check-test-job-not-switchable.sh
+	scripts/quality/lint/switch-rule-forms.json
 	tests/ci/suites/check-suite-completeness.test.sh
 	tests/quality/lint/**
 
