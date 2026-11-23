@@ -476,3 +476,127 @@ tests/ci/suites/heavy-job-budget.test.sh
 	tests/ci/suites/**
 	tests/verify/**
 	tests/build/**
+
+tests/build/assemble-tree.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/build/**
+
+tests/build/build-installers.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/build/**
+
+tests/ci/policy/workflows/publish-workflow.test.sh
+	.github/workflows/publish.yml
+	scripts/publish/**
+	tests/ci/policy/workflows/**
+
+tests/installer/install-template.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/installer/**
+
+tests/publish/admit-products.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/publish/**
+
+tests/publish/parse-plan.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/publish/**
+
+tests/publish/plan-products.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/publish/**
+
+tests/publish/purge-cache.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/publish/**
+
+tests/publish/readmit-products.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/publish/**
+
+tests/publish/rehearse-tree.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/publish/**
+
+tests/publish/sign-tree.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/publish/**
+
+tests/publish/sync-tree.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/publish/**
+
+tests/publish/check-plan-age.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/publish/**
+
+tests/publish/check-static-files.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/publish/**
+
+tests/publish/tree-digest.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/publish/**
+
+tests/publish/readback-public.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	tests/publish/**

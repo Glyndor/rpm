@@ -73,3 +73,19 @@ tests/build/sign-packages.test.sh rpm createrepo-c python3-cryptography
 tests/build/repo-file.test.sh -
 tests/build/release-package.test.sh rpm
 tests/ci/suites/heavy-job-budget.test.sh python3-yaml
+tests/build/assemble-tree.test.sh rpm createrepo-c python3-cryptography
+tests/build/build-installers.test.sh python3-cryptography
+tests/ci/policy/workflows/publish-workflow.test.sh python3-yaml
+tests/installer/install-template.test.sh rpm python3-cryptography
+tests/publish/admit-products.test.sh rpm python3-cryptography
+tests/publish/parse-plan.test.sh -
+tests/publish/plan-products.test.sh rpm createrepo-c python3-cryptography
+tests/publish/check-plan-age.test.sh -
+tests/publish/check-static-files.test.sh rpm createrepo-c python3-cryptography
+tests/publish/tree-digest.test.sh rpm createrepo-c python3-cryptography
+tests/publish/purge-cache.test.sh -
+tests/publish/readmit-products.test.sh rpm python3-cryptography
+tests/publish/rehearse-tree.test.sh rpm createrepo-c python3-cryptography
+tests/publish/sign-tree.test.sh rpm createrepo-c python3-cryptography
+tests/publish/sync-tree.test.sh rpm createrepo-c python3-cryptography
+tests/publish/readback-public.test.sh rpm createrepo-c python3-cryptography

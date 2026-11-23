@@ -39,8 +39,9 @@ check() { # <description> <expected> <actual>
 }
 
 # The workflows that are not pull request checks: the events each may run on, and no other. The
-# publication runs by hand; none of its jobs may produce a name the ruleset requires.
-EXEMPT="publish.yml=workflow_dispatch"
+# publication runs from the schedule or by hand, from main; none of its jobs may produce a name the
+# ruleset requires.
+EXEMPT="publish.yml=schedule,workflow_dispatch"
 
 # The checks of a pull request, as the ruleset names them.
 REQUIRED="commit identity
@@ -117,7 +118,7 @@ check "the workflows of this repository produce exactly the listed names, each o
 
 d="$(cp_repo exempt)"
 sed -i 's/^  workflow_dispatch:$/  push:\n  workflow_dispatch:/' "$d/.github/workflows/publish.yml"
-check "a push trigger on the publication workflow is reported" "1" "$(offences "$d" | grep -c 'publish.yml: runs on push, workflow_dispatch, not on workflow_dispatch alone')"
+check "a push trigger on the publication workflow is reported" "1" "$(offences "$d" | grep -c 'publish.yml: runs on push, schedule, workflow_dispatch, not on schedule, workflow_dispatch alone')"
 
 d="$(cp_repo push)"
 sed -i 's/^on:$/on:\n  push:\n    branches: [main]/' "$d/.github/workflows/tests.yml"
