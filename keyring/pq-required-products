@@ -1,0 +1,10 @@
+# Products whose ML-DSA-65 release signature (<rpm>.mldsa65.sig) is required,
+# one product name per line. Read by scripts/verify/admit-release.sh.
+#
+# A second signature that may be left out protects nothing: whoever can forge
+# the Ed25519 signature simply does not attach it. For a product listed here a
+# missing signature refuses the release. A line that is not exactly a product
+# name (`podup # since 2.0`, `Podup`) refuses the run as a malformed local file,
+# so a typo cannot switch the requirement off. A comment takes a line of its own.
+# Empty today: no key exists yet, and a product enters this list once one of
+# its releases was verified with both signatures by the real pipeline.

@@ -1,0 +1,38 @@
+# The packages the Podman release carries, one row per file set: for each distribution id, the
+# package name, whether it is built per architecture (`arch`) or once (`noarch`), the Epoch the
+# package must declare, and the version rule: `core` is the Podman version of the tag
+# (`X.Y.Z+rR`), `extra` is the upstream version of a component packaged beside Podman, which
+# the release names itself. The Release of every file is `<R>.glyndor.<id>`.
+#
+# This is the contract of Glyndor/podman (v6.2.0+r12 and later), read by
+# scripts/verify/admit-release.sh. The release must carry exactly these files, no more.
+# Epochs are the ones the distributions use for these names, measured 2026-11-23.
+#
+# id	name	architecture	epoch	version rule
+fc45	podman	arch	5	core
+fc45	podman-docker	noarch	5	core
+fc45	podmansh	noarch	5	core
+fc44	podman	arch	5	core
+fc44	podman-docker	noarch	5	core
+fc44	podmansh	noarch	5	core
+el9	podman	arch	6	core
+el9	podman-docker	noarch	6	core
+el9	podmansh	noarch	6	core
+el9	catatonit	arch	0	extra
+el10	podman	arch	7	core
+el10	podman-docker	noarch	7	core
+el10	podmansh	noarch	7	core
+amzn2023	podman	arch	0	core
+amzn2023	podman-docker	noarch	0	core
+amzn2023	podmansh	noarch	0	core
+amzn2023	crun	arch	0	extra
+amzn2023	conmon	arch	2	extra
+amzn2023	catatonit	arch	0	extra
+leap161	podman	arch	0	core
+leap161	podman-docker	noarch	0	core
+leap161	podmansh	noarch	0	core
+leap161	crun	arch	0	extra
+leap161	passt	arch	0	extra
+tumbleweed	podman	arch	0	core
+tumbleweed	podman-docker	noarch	0	core
+tumbleweed	podmansh	noarch	0	core

@@ -1,0 +1,7 @@
+# The Requires a service may carry besides what rpm adds by itself (rpmlib(...), /bin/sh, config(<name>), systemd).
+# One line per Requires, matched whole: product <TAB> name|comparison|version, the comparison empty when there is none.
+# A Requires that is not here, or with another version, refuses the release: the signature says who made a package,
+# not that what it pulls onto a host is the product's own.
+#
+# product <TAB> requirement
+# (none yet: no product installs a systemd unit; epistle will, and its lines go here with its package)

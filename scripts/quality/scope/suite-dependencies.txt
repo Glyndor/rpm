@@ -62,3 +62,15 @@ tests/quality/scope/ci-job-scope.test.sh -
 tests/quality/scope/suite-scope-files.test.sh -
 tests/quality/scope/suite-scope-map.test.sh -
 tests/quality/structure/folder-limit.test.sh -
+tests/config/channel-config.test.sh -
+tests/verify/admit-release-fields.test.sh rpm python3-cryptography
+tests/verify/admit-lib.test.sh -
+tests/verify/lib-evr.test.sh rpm
+tests/verify/admit-release-entries.test.sh rpm python3-cryptography python3-venv
+tests/verify/admit-release-hardening.test.sh rpm python3-cryptography python3-venv
+tests/verify/check-floor-monotonic.test.sh rpm
+tests/verify/admit-release-pq.test.sh rpm python3-cryptography python3-venv
+tests/verify/admit-release-service.test.sh rpm python3-cryptography python3-venv
+tests/verify/admit-release.test.sh rpm python3-cryptography
+tests/verify/fetch-release.test.sh -
+tests/verify/verify-release-sig.test.sh python3-cryptography

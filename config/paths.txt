@@ -1,0 +1,73 @@
+# The paths a package may install files under, one extended regular expression per line and per
+# package kind, matched against the whole of a canonical path (after /bin, /sbin, /lib and /lib64 are
+# read as their targets under /usr). NAME is the name of the package. A package with a file anywhere else
+# is refused: a signature says who made a package, not that its files belong where they are put, and
+# an allow list cannot miss a folder the package manager owns the way a list of forbidden ones does.
+#
+# Kinds: `static` is a product of one binary; `service` is the same with a systemd unit (the same paths); `podman` is the podman package; `companion` is
+# podman-docker and podmansh; `extra` is a component packaged beside Podman. The Podman kinds are
+# the list of the people who build Podman: a path they need is added here in a pull request.
+#
+# kind <TAB> expression
+static	/usr/bin/NAME
+static	/usr/lib/NAME(/.*)?
+static	/usr/lib64/NAME(/.*)?
+static	/usr/libexec/NAME(/.*)?
+static	/usr/lib/systemd/system/NAME[^/]*
+static	/usr/lib/sysusers\.d/NAME[^/]*
+static	/usr/lib/tmpfiles\.d/NAME[^/]*
+static	/usr/share/(doc|licenses)/NAME(/.*)?
+static	/usr/share/man/man[1-8]/NAME[^/]*
+static	/usr/share/bash-completion/completions/NAME
+static	/usr/share/zsh/site-functions/_NAME
+static	/usr/share/fish/vendor_completions\.d/NAME\.fish
+static	/etc/NAME(/.*)?
+static	/var/lib/NAME(/.*)?
+service	/usr/bin/NAME
+service	/usr/lib/NAME(/.*)?
+service	/usr/lib64/NAME(/.*)?
+service	/usr/libexec/NAME(/.*)?
+service	/usr/lib/systemd/system/NAME[^/]*
+service	/usr/lib/sysusers\.d/NAME[^/]*
+service	/usr/lib/tmpfiles\.d/NAME[^/]*
+service	/usr/share/(doc|licenses)/NAME(/.*)?
+service	/usr/share/man/man[1-8]/NAME[^/]*
+service	/usr/share/bash-completion/completions/NAME
+service	/usr/share/zsh/site-functions/_NAME
+service	/usr/share/fish/vendor_completions\.d/NAME\.fish
+service	/etc/NAME(/.*)?
+service	/var/lib/NAME(/.*)?
+podman	/usr/bin/podman[^/]*
+podman	/usr/libexec/podman(/.*)?
+podman	/usr/lib64/podman(/.*)?
+podman	/usr/lib/systemd/(system|user)/(podman|io\.podman)[^/]*
+podman	/usr/lib/systemd/(system|user)-generators/podman[^/]*
+podman	/usr/lib/systemd/(system|user)/(sockets\.target|default\.target)\.wants/[^/]*podman[^/]*
+podman	/usr/lib/(tmpfiles|sysusers|sysctl)\.d/podman[^/]*
+podman	/usr/share/user-tmpfiles\.d/podman[^/]*
+podman	/usr/share/containers(/.*)?
+podman	dir:/etc/containers(/.*)?
+podman	/usr/share/(doc|licenses)/(podman|netavark|aardvark-dns|containers-common)(/.*)?
+podman	/usr/share/man/man[1-8]/(podman|containers|netavark|aardvark|oci)[^/]*
+podman	/usr/share/(bash-completion/completions|zsh/site-functions|fish/vendor_completions\.d)/_?podman[^/]*
+podman	/usr/share/(bash-completion/completions|zsh/site-functions|fish/vendor_completions\.d)/_?(netavark|aardvark-dns)[^/]*
+podman	/usr/share/(licenses|doc)/podman-[^/]*(/.*)?
+podman	/var/lib/containers(/.*)?
+podman	/usr/lib/modules-load\.d/podman[^/]*
+podman	/usr/share/podman(/.*)?
+companion	/usr/bin/(docker|podmansh)
+companion	/usr/lib/(tmpfiles|sysusers)\.d/NAME[^/]*
+companion	/usr/share/(doc|licenses)/NAME(/.*)?
+companion	/usr/share/man/man[1-8]/(docker|podmansh)[^/]*
+companion	/usr/share/(bash-completion/completions|zsh/site-functions|fish/vendor_completions\.d)/_?(docker|podmansh)[^/]*
+companion	dir:/etc/containers(/.*)?
+companion	/usr/share/containers/[^/]*
+extra	/usr/bin/NAME
+extra	/usr/bin/(pasta|qrap|passt\.avx2|pasta\.avx2)
+extra	/usr/libexec/NAME(/.*)?
+extra	/usr/lib/NAME(/.*)?
+extra	/usr/lib64/NAME(/.*)?
+extra	/usr/share/(doc|licenses)/NAME(/.*)?
+extra	/usr/share/man/man[1-8]/(NAME|pasta|qrap)[^/]*
+extra	/usr/share/selinux/packages/[^/]*
+extra	/usr/share/(bash-completion/completions|zsh/site-functions|fish/vendor_completions\.d)/_?NAME[^/]*

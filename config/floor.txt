@@ -1,0 +1,7 @@
+# The highest release of each product the channel has admitted, one `<product> <tag>` per line.
+#
+# The repository can only be compared with what it serves itself, and whoever controls what is served
+# controls that comparison. This file is the record that does not live in the bucket: a release
+# lower than the line of its product is refused at admission, whatever the repository serves. A line is
+# raised in the pull request that follows a publication of a higher release; it is never lowered. A
+# product with no line has no floor. Empty today: nothing is published.

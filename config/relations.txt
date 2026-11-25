@@ -1,0 +1,57 @@
+# What a package may provide and obsolete, as an extended regular expression per package
+# kind, matched against the whole of a relation's name (the version after it is not read).
+# A release that signs a package claiming to obsolete something else, such as `openssh`, is
+# refused: the signature says who made a package, not that its claims are the product's own.
+# Conflicts and Obsoletes of a `static` or `extra` package are not allowed at all, and nothing is
+# allowed to supplement or enhance: those two relations attach a package to other packages from the
+# outside. `requires`, `recommends` and `suggests` say what a package may pull in; NONE means nothing.
+#
+# A `service` is a `static` product that installs a systemd unit: the same rules, except that it also says in
+# service-requires.txt, product by product, the exact Requires it may add (name, comparison and version), and carries the
+# three scriptlets of the systemd macros (scriptlets.txt).
+#
+# The fourth column is the form of the comparison and the version that go with a name: NONE (neither), PROVIDED (none, or
+# `=` and a version) and LOWERBOUND (none, or `>=`, `=` or `>` and a version; never `<` or `<=`, which force a host to an old
+# version). The Podman kinds name no version for what they obsolete: it is unversioned in the contract.
+#
+# kind <TAB> relation <TAB> name expression <TAB> form
+podman	provides	(podman|podman-remote|podman-quadlet|podman-catatonit|podman-manpages|podman-podmansh|podman-shell|podmansh|netavark|aardvark-dns|containers-common|containers-common-extra|skopeo-containers|libcontainers-common|libcontainers-image|libcontainers-storage|libcontainers-policy|registries-conf|container-network-stack)(\(.*\))?	PROVIDED
+podman	obsoletes	(podman-remote|podman-quadlet|podman-machine|podman-tests|podman-catatonit|netavark-tests|aardvark-dns-tests|netavark|aardvark-dns|containers-common|containers-common-extra|skopeo-containers|libcontainers-common|libcontainers-image|libcontainers-storage|libcontainers-policy|registries-conf)	NONE
+podman	conflicts	NONE	NONE
+podman	requires	.*	LOWERBOUND
+podman	recommends	.*	LOWERBOUND
+podman	suggests	.*	LOWERBOUND
+podman	supplements	NONE	NONE
+podman	enhances	NONE	NONE
+companion	provides	(podman-docker|podmansh|docker)(\(.*\))?	PROVIDED
+companion	obsoletes	docker	NONE
+companion	conflicts	NONE	NONE
+companion	requires	.*	LOWERBOUND
+companion	recommends	.*	LOWERBOUND
+companion	suggests	.*	LOWERBOUND
+companion	supplements	NONE	NONE
+companion	enhances	NONE	NONE
+extra	provides	(crun|conmon|catatonit|passt|pasta)(\(.*\))?	PROVIDED
+extra	obsoletes	NONE	NONE
+extra	conflicts	NONE	NONE
+extra	requires	.*	LOWERBOUND
+extra	recommends	NONE	NONE
+extra	suggests	NONE	NONE
+extra	supplements	NONE	NONE
+extra	enhances	NONE	NONE
+static	provides	(NAME|NAME\((x86-64|aarch-64)\)|config\(NAME\))	PROVIDED
+static	obsoletes	NONE	NONE
+static	conflicts	NONE	NONE
+static	requires	(rpmlib\(.*\)|config\(NAME\)|(user|group)\([a-z_][a-z0-9_-]*\)|/bin/sh|podman|podup|systemd|ca-certificates|nftables)(\(.*\))?	NONE
+static	recommends	NONE	NONE
+static	suggests	NONE	NONE
+static	supplements	NONE	NONE
+static	enhances	NONE	NONE
+service	provides	(NAME|NAME\((x86-64|aarch-64)\)|config\(NAME\))	PROVIDED
+service	obsoletes	NONE	NONE
+service	conflicts	NONE	NONE
+service	requires	(rpmlib\(.*\)|config\(NAME\)|(user|group)\([a-z_][a-z0-9_-]*\)|/bin/sh|systemd)	NONE
+service	recommends	NONE	NONE
+service	suggests	NONE	NONE
+service	supplements	NONE	NONE
+service	enhances	NONE	NONE
