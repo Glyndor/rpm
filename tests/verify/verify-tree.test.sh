@@ -33,6 +33,26 @@ bad() { # <description> <fragment> <mutation command run inside a copy of the tr
 	check "$d: refused" 1 "$rc"
 	check "$d: says why" 1 "$(printf '%s' "$o" | grep -cF -- "$frag")"
 }
+cat > "$WORK/lie.py" <<'PY'
+import gzip, hashlib, os, re, sys
+repo = sys.argv[1]
+rd = os.path.join(repo, "repodata")
+rm = open(os.path.join(rd, "repomd.xml")).read()
+href = re.search(r'<data type="primary">.*?<location href="repodata/([^"]+)"', rm, re.S).group(1)
+raw = gzip.open(os.path.join(rd, href)).read().decode()
+raw = raw.replace("<arch>x86_64</arch>", "<arch>noarch</arch>", 1)
+data = gzip.compress(raw.encode(), mtime=0)
+new = hashlib.sha256(data).hexdigest() + "-primary.xml.gz"
+open(os.path.join(rd, new), "wb").write(data)
+os.remove(os.path.join(rd, href))
+block = re.search(r'<data type="primary">.*?</data>', rm, re.S).group(0)
+nb = re.sub(r'(<checksum type="sha256">)[0-9a-f]+', r'\g<1>' + hashlib.sha256(data).hexdigest(), block, count=1)
+nb = re.sub(r'(<open-checksum type="sha256">)[0-9a-f]+', r'\g<1>' + hashlib.sha256(raw.encode()).hexdigest(), nb, count=1)
+nb = nb.replace(href, new)
+nb = re.sub(r'(<size>)\d+', r'\g<1>' + str(len(data)), nb, count=1)
+nb = re.sub(r'(<open-size>)\d+', r'\g<1>' + str(len(raw.encode())), nb, count=1)
+open(os.path.join(rd, "repomd.xml"), "w").write(rm.replace(block, nb))
+PY
 R=fc45/x86_64
 bad "a package altered after the metadata was made" "does not match its checksum" "printf x >> $R/Packages/podup-1.2.3-1.glyndor.any.x86_64.rpm"
 bad "a package that is listed and gone" "is listed and missing" "rm $R/Packages/podup-1.2.3-1.glyndor.any.x86_64.rpm"
@@ -70,6 +90,21 @@ bad "an id folder that is gone" "is a distribution of config/distros.txt and the
 bad "a data file of repomd.xml that is altered" "does not match the checksum repomd.xml gives it" "for f in $R/repodata/*-other.xml.gz; do printf x >> \$f; done"
 bad "a data file of repomd.xml that is gone" "is listed by repomd.xml and missing" "rm $R/repodata/*-filelists.xml.gz"
 FPR="$(gpg --list-secret-keys --with-colons | awk -F: '$1 == "fpr" { print $10; exit }')"
+# what the packages of an id and an architecture say about themselves, with metadata made to match and signed
+remake() { # <repo dir>: new metadata for what Packages/ holds, signed with the archive key
+	rm -rf "$1/repodata"
+	createrepo_c --quiet --revision "$FX_T1" --set-timestamp-to-revision --compress-type gz --general-compress-type gz --workers 1 "$1"
+	gpg --batch --yes --armor --detach-sign --faked-system-time "$FX_T1!" -u "$FPR" -o "$1/repodata/repomd.xml.asc" "$1/repodata/repomd.xml"
+}
+mkdir -p "$WORK/evil"; fx_rpm "$WORK/evil" evil 1 1.glyndor.any noarch provides=evil
+"$HERE/scripts/build/sign-packages.sh" "$WORK/archive.asc" "$WORK/evil" > /dev/null 2>&1
+bad "a package of another architecture in the repository of this one" "is a package for aarch64" "cp el9/aarch64/Packages/podup-1.2.3-1.glyndor.any.aarch64.rpm el9/x86_64/Packages/; remake el9/x86_64"
+bad "a package with the release of another distribution" "which is not one of this distribution (el9)" "cp el10/x86_64/Packages/podman-6.2.0+r12-12.glyndor.el10.x86_64.rpm el9/x86_64/Packages/; remake el9/x86_64"
+bad "a package that is not in the set of the id" "that are not in the set of el9: evil" "cp $WORK/evil/evil-1-1.glyndor.any.noarch.rpm el9/x86_64/Packages/; remake el9/x86_64"
+bad "a package of the Podman set that is missing" "the Podman set of el9 is not whole, it lacks: " "rm el9/x86_64/Packages/podman-docker-*.rpm; remake el9/x86_64"
+bad "the bootstrap package missing" "has no glyndor-release package" "rm el9/x86_64/Packages/glyndor-release-*.rpm; remake el9/x86_64"
+bad "a product that is in one repository and not in the others" "the products it holds are not the ones of" "rm fc44/x86_64/Packages/podup-*.rpm; remake fc44/x86_64"
+bad "a list that says another architecture than the header of the package" "the metadata lists" "python3 -I $WORK/lie.py el9/x86_64 && gpg --batch --yes --armor --detach-sign --faked-system-time '$FX_T1!' -u $FPR -o el9/x86_64/repodata/repomd.xml.asc el9/x86_64/repodata/repomd.xml"
 bad "a package signed by nobody, with metadata made to match" "x86_64.rpm: " "rpmsign --delsign $R/Packages/podup-1.2.3-1.glyndor.any.x86_64.rpm; rm -rf $R/repodata; createrepo_c --quiet --revision $FX_T1 --set-timestamp-to-revision --compress-type gz --general-compress-type gz --workers 1 $R; gpg --batch --yes --armor --detach-sign --faked-system-time '$FX_T1!' -u $FPR -o $R/repodata/repomd.xml.asc $R/repodata/repomd.xml"
 bad "a repository file that offers every package of the host" "is not the repository file the channel gives out" "sed -i '/^includepkgs=/d' el9/glyndor.repo"
 bad "a repository file without its last line feed" "is not the repository file the channel gives out" "truncate -s -1 el9/glyndor.repo"
