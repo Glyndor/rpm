@@ -27,3 +27,22 @@ updates:
     # predictable and matches apt, homebrew-tap and scoop-bucket.
     commit-message:
       prefix: chore
+
+  # The wheels that check the second, ML-DSA-65 half of a release signature, pinned by hash in
+  # scripts/verify/verify-release-requirements.txt. A fix in a library that verifies signatures is not one to
+  # find out about by accident. The file stays hash-pinned: Dependabot rewrites the hashes with the version.
+  - package-ecosystem: "pip"
+    directory: "/scripts/verify"
+    schedule:
+      interval: "daily"
+    labels: ["type:deps", "type:security"]
+    open-pull-requests-limit: 5
+    groups:
+      verifier-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+      verifier-major:
+        patterns: ["*"]
+        update-types: ["major"]
+    commit-message:
+      prefix: chore

@@ -54,7 +54,7 @@ problems = []
 
 # What the tree has, by ecosystem: the folder that holds its manifest.
 MANIFESTS = {
-    "pip": re.compile(r"(^|/)(requirements[^/]*\.txt|pyproject\.toml|Pipfile)$"),
+    "pip": re.compile(r"(^|/)([^/]*requirements[^/]*\.txt|pyproject\.toml|Pipfile)$"),
     "npm": re.compile(r"(^|/)package\.json$"),
     "cargo": re.compile(r"(^|/)Cargo\.toml$"),
     "gomod": re.compile(r"(^|/)go\.mod$"),
@@ -161,6 +161,10 @@ check "an empty updates list is reported, and the action it leaves unwatched" \
 check "a requirements file with no pip entry is reported" \
 	"pip /scripts/verify: the repository has it and dependabot.yml does not watch it" \
 	"$(audit "$(tree pip "$GOOD" scripts/verify/requirements.txt)")"
+
+check "a requirements file named for what it verifies is reported too" \
+	"pip /scripts/verify: the repository has it and dependabot.yml does not watch it" \
+	"$(audit "$(tree pip-named "$GOOD" scripts/verify/verify-release-requirements.txt)")"
 
 stale="$GOOD
   - package-ecosystem: \"npm\"
