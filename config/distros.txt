@@ -1,0 +1,24 @@
+# The distributions the channel serves, one repository per id:
+#   id <TAB> release suffix <TAB> architectures <TAB> client <TAB> address form
+#
+# The id is the folder under https://rpm.glyndor.net. The release suffix is the `.glyndor.<suffix>` ending of
+# a package's Release (the Podman contract's id), which is the same word except where the folder follows
+# what the distribution calls itself: Leap 16.1 is `leap16.1` there, because `$releasever` is `16.1`.
+#
+# The address form is what goes between the host and `/$basearch/` in the repository file, measured on
+# 2026-11-23 in the image of each: on Fedora `$releasever` is the release (45, 44), so a host that is
+# upgraded keeps finding the folder of its own release (which is published before the release comes out, and
+# never deleted); on AlmaLinux and Rocky it is the major (9, 10) but Red Hat's own EUS releases pin it to
+# 9.x, so EL has a fixed id per major; on Amazon Linux it is `2023.12.20261120`, so the id is fixed; on
+# Leap it is `16.1`; on Tumbleweed it is a date, so the id is fixed. Nothing is deleted when a release
+# ends: the folder is frozen with a last signed repomd.xml.
+#
+# The client is the package manager the live check drives. The same repository file is read by dnf 4,
+# dnf 5 and zypper.
+fc45	fc45	x86_64,aarch64	dnf	fc$releasever
+fc44	fc44	x86_64,aarch64	dnf	fc$releasever
+el9	el9	x86_64,aarch64	dnf	el9
+el10	el10	x86_64,aarch64	dnf	el10
+amzn2023	amzn2023	x86_64,aarch64	dnf	amzn2023
+leap16.1	leap161	x86_64,aarch64	zypper	leap$releasever
+tumbleweed	tumbleweed	x86_64,aarch64	zypper	tumbleweed

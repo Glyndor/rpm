@@ -1,0 +1,26 @@
+# The repositories of the channel (id and architecture of config/distros.txt) and whether they have been published:
+# `new` before the first publication (the server answers nothing for it and that is expected), `published` after.
+# A repository that is `published` and answers nothing is refused, so a 404 someone provokes does not switch the
+# order check off; one that is not listed at all is refused too. The change from new to published is made by the
+# pull request that follows the first publication of that repository.
+#
+# id <SPACE> arch <SPACE> new
+# id <SPACE> arch <SPACE> published <SPACE> revision <SPACE> sha256 of the repomd.xml of that revision
+#
+# A published line records the last revision known to have been served, so what is served may not be older than it
+# (a signed repository of the past put back) and at that very revision it is that very file. The pull request that follows
+# a publication raises it.
+fc45 x86_64 new
+fc45 aarch64 new
+fc44 x86_64 new
+fc44 aarch64 new
+el9 x86_64 new
+el9 aarch64 new
+el10 x86_64 new
+el10 aarch64 new
+amzn2023 x86_64 new
+amzn2023 aarch64 new
+leap16.1 x86_64 new
+leap16.1 aarch64 new
+tumbleweed x86_64 new
+tumbleweed aarch64 new

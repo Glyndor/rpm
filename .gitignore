@@ -24,7 +24,7 @@ __pycache__/
 venv/
 *.egg-info/
 dist/
-build/
+/build/
 
 # macOS
 .DS_Store

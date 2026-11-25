@@ -74,3 +74,11 @@ tests/verify/admit-release-service.test.sh rpm python3-cryptography python3-venv
 tests/verify/admit-release.test.sh rpm python3-cryptography
 tests/verify/fetch-release.test.sh -
 tests/verify/verify-release-sig.test.sh python3-cryptography
+tests/build/build-repo.test.sh rpm createrepo-c python3-cryptography
+tests/build/sign-packages.test.sh rpm createrepo-c python3-cryptography
+tests/verify/check-release-order.test.sh rpm createrepo-c python3-cryptography
+tests/verify/repo-state.test.sh rpm createrepo-c python3-cryptography
+tests/verify/served-state.test.sh rpm createrepo-c python3-cryptography
+tests/verify/verify-tree.test.sh rpm createrepo-c python3-cryptography
+tests/build/repo-file.test.sh -
+tests/build/release-package.test.sh rpm
