@@ -47,7 +47,7 @@ writable="$(find "$TREE" ! -type l -perm /022 -printf '%m %P\n' | head -3)"
 echo glyndor-rpm-key.asc >> "$WORK/expected-files"
 
 repos=0; packages=0
-while IFS=$'\t' read -r id _suffix archs _client _form; do
+while IFS=$'\t' read -r id suffix archs _client _form; do
 	[ -d "$TREE/$id" ] || die "$id is a distribution of config/distros.txt and the tree has no folder for it"
 	echo "$id" >> "$WORK/expected-dirs"; echo "$id/glyndor.repo" >> "$WORK/expected-files"
 	# written to a file and compared byte by byte: a command substitution drops the line feeds at the end and cannot
@@ -72,12 +72,26 @@ while IFS=$'\t' read -r id _suffix archs _client _form; do
 		done < "$WORK/located"
 		state packages "$repo/repodata/repomd.xml" "$repo/$href" > "$WORK/list" || die "$id/$arch: unreadable primary metadata"
 		: > "$WORK/listed"
-		while IFS=$'\t' read -r name _a _e _v _r sum loc; do
+		: > "$WORK/names-$id-$arch"
+		while IFS=$'\t' read -r name lst_a lst_e lst_v lst_r sum loc; do
 			[[ "$loc" =~ ^Packages/[A-Za-z0-9._+~-]+\.rpm$ ]] || die "$id/$arch: $name is listed at '$loc'"
 			if [ ! -f "$repo/$loc" ] || [ -L "$repo/$loc" ]; then die "$id/$arch: $loc is listed and missing"; fi
 			[ "$(sha256sum "$repo/$loc" | cut -d' ' -f1)" = "$sum" ] || die "$id/$arch: $loc does not match its checksum"
 			out="$(rpmkeys --dbpath "$WORK/db" -K "$repo/$loc" 2>&1)" || die "$id/$arch: rpm refuses $loc: $out"
 			case "$out" in *"digests signatures OK") ;; *) die "$id/$arch: $loc: $out" ;; esac
+			# what the package says about itself is read from its header, and the list of the metadata must say the same: the
+			# repository serves the package under this id and this architecture only when the header agrees
+			hdr="$(rpm --dbpath "$WORK/db" -qp --nomanifest --nosignature --nodigest --qf '%{NAME}\t%{ARCH}\t%{EPOCH}\t%{VERSION}\t%{RELEASE}' "$repo/$loc" 2> /dev/null)" \
+				|| die "$id/$arch: cannot read the header of $loc"
+			IFS=$'\t' read -r h_n h_a h_e h_v h_r <<< "$hdr"
+			[ "$h_e" != "(none)" ] || h_e=0
+			[ "$lst_e" != "(none)" ] || lst_e=0
+			if [ "$h_n" != "$name" ] || [ "$h_a" != "$lst_a" ] || [ "$h_e" != "$lst_e" ] || [ "$h_v" != "$lst_v" ] || [ "$h_r" != "$lst_r" ]; then
+				die "$id/$arch: the metadata lists $name $lst_a $lst_e:$lst_v-$lst_r for $loc and its header says $h_n $h_a $h_e:$h_v-$h_r"
+			fi
+			if [ "$h_a" != "$arch" ] && [ "$h_a" != noarch ]; then die "$id/$arch: $loc is a package for $h_a"; fi
+			[[ "$h_r" =~ ^[0-9]+\.glyndor\.($suffix|any)$ ]] || die "$id/$arch: $loc has the release '$h_r', which is not one of this distribution ($suffix) or of all ('any')"
+			printf '%s\n' "$h_n" >> "$WORK/names-$id-$arch"
 			printf '%s\n' "${loc#Packages/}" >> "$WORK/listed"
 			echo "$id/$arch/$loc" >> "$WORK/expected-files"
 			packages=$((packages + 1))
@@ -92,6 +106,24 @@ while IFS=$'\t' read -r id _suffix archs _client _form; do
 		if [ -n "$dup" ]; then die "$id/$arch: two packages own the file '$dup'"; fi
 		(cd "$repo/Packages" && find . -mindepth 1 -printf '%P\n') | sort > "$WORK/present"
 		sort "$WORK/listed" | cmp -s - "$WORK/present" || die "$id/$arch: Packages/ and the metadata do not list the same files"
+		# the set of packages of this repository: only names of this id, the bootstrap package, and the whole Podman set of the
+		# id when any of it is there
+		sort -u "$WORK/names-$id-$arch" > "$WORK/names.sorted"
+		grep -qx glyndor-release "$WORK/names.sorted" || die "$id/$arch: the repository has no glyndor-release package"
+		{ grep -vE '^[[:space:]]*(#|$)' "$CONFIG_DIR/podman-packages.txt" | awk -F'\t' -v i="$suffix" '$1 == i { print $2 }'
+			grep -vE '^[[:space:]]*(#|$)' "$CONFIG_DIR/products.txt" | awk -F'\t' '$2 != "podman" { print $1 }'
+			echo glyndor-release; } | sort -u > "$WORK/allowed.sorted"
+		extra_names="$(comm -23 "$WORK/names.sorted" "$WORK/allowed.sorted" | head -3 | tr '\n' ' ')"
+		[ -z "$extra_names" ] || die "$id/$arch: the repository holds packages that are not in the set of $id: $extra_names"
+		grep -vE '^[[:space:]]*(#|$)' "$CONFIG_DIR/podman-packages.txt" | awk -F'\t' -v i="$suffix" '$1 == i { print $2 }' | sort -u > "$WORK/podman-set"
+		if [ -n "$(comm -12 "$WORK/names.sorted" "$WORK/podman-set")" ]; then
+			missing="$(comm -13 "$WORK/names.sorted" "$WORK/podman-set" | head -3 | tr '\n' ' ')"
+			[ -z "$missing" ] || die "$id/$arch: the Podman set of $id is not whole, it lacks: $missing"
+		fi
+		# what is not Podman (the products) is the same in every repository: a product that is in one is in all
+		grep -vxFf "$WORK/podman-set" "$WORK/names.sorted" | grep -vx glyndor-release > "$WORK/products-$id-$arch" || true
+		if [ -z "${REF_PRODUCTS:-}" ]; then REF_PRODUCTS="$id/$arch"; cp "$WORK/products-$id-$arch" "$WORK/products-ref"
+		elif ! cmp -s "$WORK/products-$id-$arch" "$WORK/products-ref"; then die "$id/$arch: the products it holds are not the ones of $REF_PRODUCTS"; fi
 		repos=$((repos + 1))
 	done
 done < <(grep -vE '^[[:space:]]*(#|$)' "$CONFIG_DIR/distros.txt")
