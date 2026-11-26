@@ -51,7 +51,10 @@ problems() {
 	python3 -I - "$1" <<'PY'
 import fnmatch, glob, os, re, sys
 root = sys.argv[1]
+# tests.yml first (its test-command is the list), then the other workflows that run suites of their own (tests-*.yml)
 wf = open(os.path.join(root, ".github/workflows/tests.yml")).read()
+for extra in sorted(glob.glob(os.path.join(root, ".github/workflows/tests-*.yml"))):
+    wf += "\n" + open(extra).read()
 block = re.search(r"test-command: >-\n(.*?)(\n      #|\n\n|\Z)", wf, re.S).group(1)
 suites = [l.strip()[2:] for l in block.splitlines() if l.strip().startswith("./tests/")]
 # The suites a step of any job hands to the runner, outside the test-command.
@@ -203,6 +206,8 @@ from pathlib import Path
 import sys
 root = Path(sys.argv[1])
 wf = (root / '.github/workflows/tests.yml').read_text()
+for extra in sorted(root.glob('.github/workflows/tests-*.yml')):
+    wf += chr(10) + extra.read_text()
 allowed = set(wf.split('apt-packages: ', 1)[1].splitlines()[0].split())
 seen = set()
 for line in (root / 'scripts/quality/scope/suite-dependencies.txt').read_text().splitlines():

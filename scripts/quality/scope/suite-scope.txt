@@ -467,3 +467,10 @@ tests/build/release-package.test.sh
 	keyring/**
 	scripts/build/**
 	tests/build/**
+
+tests/ci/suites/heavy-job-budget.test.sh
+	.github/workflows/tests.yml
+	.github/workflows/tests-heavy.yml
+	tests/ci/suites/**
+	tests/verify/**
+	tests/build/**
