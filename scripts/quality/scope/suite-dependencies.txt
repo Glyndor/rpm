@@ -39,6 +39,7 @@ tests/ci/suites/lint-job-scope.test.sh python3-yaml
 tests/ci/suites/shell-ci-scope.test.sh python3-yaml
 tests/ci/suites/step-script.test.sh -
 tests/keyring/archive-key.test.sh -
+tests/keyring/readme-fingerprint.test.sh -
 tests/quality/coverage/check-suites-wired.test.sh python3-yaml
 tests/quality/coverage/check-test-coverage.test.sh -
 tests/quality/hygiene/check-commit-identity.test.sh -

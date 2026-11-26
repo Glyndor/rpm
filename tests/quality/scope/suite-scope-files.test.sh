@@ -42,12 +42,12 @@ check() { # <description> <expected> <actual>
 # The files a change to which keeps only the suites that walk the whole tree. Each one is
 # here because nothing reads it but the check of .editorconfig, and the map of paths
 # against the tree: the licence, the ignore list, an empty folder's placeholder, the
-# editor settings, and the README until a suite reads the key it names.
+# and the editor settings. The README is not among them: the suite that holds its
+# fingerprint to the key reads it.
 INERT="$(cat <<'EOF'
 .editorconfig
 .gitignore
 LICENSE
-README.md
 docs/.gitkeep
 EOF
 )"
