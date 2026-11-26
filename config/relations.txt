@@ -42,7 +42,7 @@ extra	enhances	NONE	NONE
 static	provides	(NAME|NAME\((x86-64|aarch-64)\)|config\(NAME\))	PROVIDED
 static	obsoletes	NONE	NONE
 static	conflicts	NONE	NONE
-static	requires	(rpmlib\(.*\)|config\(NAME\)|(user|group)\([a-z_][a-z0-9_-]*\)|/bin/sh|podman|podup|systemd|ca-certificates|nftables)(\(.*\))?	NONE
+static	requires	(rpmlib\(.*\)|config\(NAME\)|(user|group)\([a-z_][a-z0-9_-]*\)|/bin/sh|podman|podup|systemd|ca-certificates|nftables)(\(.*\))?	LOWERBOUND
 static	recommends	NONE	NONE
 static	suggests	NONE	NONE
 static	supplements	NONE	NONE
