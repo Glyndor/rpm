@@ -26,6 +26,7 @@ if [ "$served" -eq 1 ]; then
 else
 	: > "$WORK/served-names"
 fi
+products="$(grep -vE '^[[:space:]]*(#|$)' "$HERE/config/products.txt")" || die "config/products.txt cannot be read or lists no product"
 while IFS=$'\t' read -r product _kind _archs _wf; do
 	info="$(gh release view --repo "Glyndor/$product" --json tagName,assets)" || die "cannot read the latest release of Glyndor/$product"
 	tag="$(jq -r '.tagName' <<< "$info")"
@@ -37,4 +38,4 @@ while IFS=$'\t' read -r product _kind _archs _wf; do
 	else
 		echo "::notice::Glyndor/$product $tag carries no .rpm, and none is served: skipped" >&2
 	fi
-done < <(grep -vE '^[[:space:]]*(#|$)' "$HERE/config/products.txt")
+done <<< "$products"
