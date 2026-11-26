@@ -1,0 +1,16 @@
+# How long each suite of the `heavy tests` job takes, in seconds, measured on one machine with nothing else running
+# (2026-11-25; the runner takes about 1.25 times as long, which is what tests/ci/suites/heavy-job-budget.test.sh allows).
+# A suite of that job has a line here and a line here belongs to a suite of that job: the limit of the job follows these.
+#
+# suite <SPACE> seconds
+tests/verify/admit-release.test.sh 92
+tests/verify/admit-release-fields.test.sh 88
+tests/verify/admit-release-entries.test.sh 39
+tests/verify/admit-release-hardening.test.sh 38
+tests/verify/admit-release-pq.test.sh 12
+tests/verify/admit-release-service.test.sh 7
+tests/verify/verify-tree.test.sh 58
+tests/verify/repo-state.test.sh 46
+tests/verify/check-release-order.test.sh 45
+tests/verify/served-state.test.sh 15
+tests/build/build-repo.test.sh 38

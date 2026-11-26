@@ -218,6 +218,7 @@ jobs:
         ./tests/ci/reusable/reusable-shell-ci.test.sh
         ./tests/ci/reusable/reusable-workflow-lint.test.sh
         ./tests/ci/suites/check-suite-completeness-verdict.test.sh
+        ./tests/ci/suites/heavy-job-budget.test.sh
         ./tests/ci/suites/ci-runs-every-test.test.sh
         ./tests/ci/suites/lint-job-scope.test.sh
         ./tests/ci/suites/shell-ci-scope.test.sh
@@ -247,24 +248,13 @@ jobs:
         ./tests/quality/scope/suite-scope-files.test.sh
         ./tests/quality/scope/suite-scope-map.test.sh
         ./tests/quality/structure/folder-limit.test.sh
-        ./tests/build/build-repo.test.sh
         ./tests/build/sign-packages.test.sh
         ./tests/config/channel-config.test.sh
         ./tests/verify/admit-lib.test.sh
-        ./tests/verify/admit-release-entries.test.sh
-        ./tests/verify/admit-release-hardening.test.sh
-        ./tests/verify/admit-release-fields.test.sh
-        ./tests/verify/admit-release-pq.test.sh
-        ./tests/verify/admit-release-service.test.sh
-        ./tests/verify/admit-release.test.sh
         ./tests/verify/check-floor-monotonic.test.sh
-        ./tests/verify/check-release-order.test.sh
         ./tests/verify/fetch-release.test.sh
         ./tests/verify/lib-evr.test.sh
-        ./tests/verify/repo-state.test.sh
-        ./tests/verify/served-state.test.sh
         ./tests/verify/verify-release-sig.test.sh
-        ./tests/verify/verify-tree.test.sh
       apt-packages: shellcheck python3-yaml rpm createrepo-c python3-cryptography python3-venv
 
   gate:

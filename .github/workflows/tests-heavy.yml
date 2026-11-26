@@ -1,0 +1,39 @@
+name: Heavy tests
+
+# The suites that build and admit whole releases are most of the time of the tests, and the job `shell / test` of tests.yml is
+# cut at 15 minutes by its reusable. They run here instead, beside it, in a workflow of their own with a limit derived from what
+# they measured (tests/ci/suites/suite-seconds.txt) and held to it by tests/ci/suites/heavy-job-budget.test.sh: adding a
+# suite to this list without its measure, or growing the list past the limit, is red. Nothing was removed from the tests;
+# they run here. The check is `heavy tests`, and the ruleset requires it as it requires the others.
+#
+# PULL REQUEST ONLY, like tests.yml: no push trigger and no schedule.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  # A newer push supersedes the run on the same pull request and nothing else.
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  heavy:
+    name: heavy tests
+    # ubuntu-26.04 as the reusable that runs the other suites: they read what rpm of that image answers.
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install what the suites use
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rpm createrepo-c python3-cryptography python3-venv
+      - name: Run the suites
+        run: |
+          ./tests/ci/suites/check-suite-completeness.test.sh ./tests/verify/admit-release.test.sh ./tests/verify/admit-release-fields.test.sh ./tests/verify/admit-release-entries.test.sh ./tests/verify/admit-release-hardening.test.sh ./tests/verify/admit-release-pq.test.sh ./tests/verify/admit-release-service.test.sh ./tests/verify/verify-tree.test.sh ./tests/verify/repo-state.test.sh ./tests/verify/check-release-order.test.sh ./tests/verify/served-state.test.sh ./tests/build/build-repo.test.sh

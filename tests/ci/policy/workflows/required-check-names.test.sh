@@ -44,6 +44,7 @@ dco / Signed-off-by present on every commit
 empty-diff / empty diff
 folder limit
 gate
+heavy tests
 line-limit / line limit
 secret scan
 shell / shellcheck
