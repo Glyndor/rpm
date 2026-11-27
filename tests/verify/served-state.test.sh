@@ -60,7 +60,7 @@ o="$(served "file://$WORK/tree" fc45)"; check "too few arguments are refused" 1 
 
 # over HTTP: a 404 is nothing served, and a server error is not
 mkdir -p "$WORK/www"; cp -r "$WORK/tree" "$WORK/www/ok"
-( cd "$WORK/www" && python3 -m http.server 18431 --bind 127.0.0.1 > /dev/null 2>&1 ) &
+( cd "$WORK/www" && exec python3 -m http.server 18431 --bind 127.0.0.1 > /dev/null 2>&1 ) &
 SERVER_PID=$!
 for _ in 1 2 3 4 5 6 7 8 9 10; do curl --silent --max-time 2 --connect-timeout 2 -o /dev/null http://127.0.0.1:18431/ && break; sleep 1; done
 rm -rf "$WORK/out"; mkdir "$WORK/out"; "$SERVED" http://127.0.0.1:18431/ok fc45 x86_64 "$WORK/out" "$WORK/archive.asc" > /dev/null 2>&1
@@ -70,7 +70,7 @@ cat > "$WORK/www/ok/.keep" < /dev/null
 "$SERVED" "http://127.0.0.1:18431" fc45 x86_64 "$WORK/out" "$WORK/archive.asc" > /dev/null 2>&1
 check "a 404 over http is nothing served (10)" 10 "$?"
 kill "$SERVER_PID" 2>/dev/null; SERVER_PID=""
-( cd "$WORK/tree" && python3 -m http.server 18432 --bind 127.0.0.1 > /dev/null 2>&1 ) &
+( cd "$WORK/tree" && exec python3 -m http.server 18432 --bind 127.0.0.1 > /dev/null 2>&1 ) &
 SERVER_PID=$!
 for _ in 1 2 3 4 5 6 7 8 9 10; do curl --silent --max-time 2 --connect-timeout 2 -o /dev/null http://127.0.0.1:18432/ && break; sleep 1; done
 rm -rf "$WORK/out"; mkdir "$WORK/out"; "$SERVED" http://127.0.0.1:18432 fc45 x86_64 "$WORK/out" "$WORK/archive.asc" > /dev/null 2>&1

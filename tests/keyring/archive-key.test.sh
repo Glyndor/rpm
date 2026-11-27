@@ -31,7 +31,9 @@ stop_agents() {
 	local h
 	for h in "$WORK"/home "$WORK"/gen-*; do
 		[ -d "$h" ] || continue
-		GNUPGHOME="$h" timeout 10 gpgconf --kill gpg-agent >/dev/null 2>&1 || true
+		# The agent of the temporary keyring is closed before its folder goes, and its socket folder with it.
+		timeout 10 gpgconf --homedir "$h" --kill all >/dev/null 2>&1 || true
+		gpgconf --homedir "$h" --remove-socketdir >/dev/null 2>&1 || true
 	done
 }
 trap 'stop_agents; rm -rf "$WORK"' EXIT
@@ -101,7 +103,9 @@ keygen() { # <name> <algo> <expire> <uid>: an armored public key in $WORK/<name>
 	GNUPGHOME="$h" gpg --batch --no-tty --quiet --passphrase '' --quick-generate-key "$4" "$2" sign "$3" 2>/dev/null
 	GNUPGHOME="$h" gpg --batch --no-tty --armor --export > "$WORK/$1.asc"
 	GNUPGHOME="$h" gpg --batch --no-tty --armor --export-secret-keys > "$WORK/$1.secret.asc" 2>/dev/null || true
-	GNUPGHOME="$h" timeout 10 gpgconf --kill gpg-agent >/dev/null 2>&1 || true
+	# The agent of the temporary keyring is closed before its folder goes, and its socket folder with it.
+	timeout 10 gpgconf --homedir "$h" --kill all >/dev/null 2>&1 || true
+	gpgconf --homedir "$h" --remove-socketdir >/dev/null 2>&1 || true
 }
 
 # A key with the right shape and a different identity: the fingerprint is the only

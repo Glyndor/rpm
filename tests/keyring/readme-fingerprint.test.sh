@@ -17,7 +17,12 @@ export LC_ALL=C
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORK="$(mktemp -d)"
-trap 'GNUPGHOME="$WORK/home" timeout 10 gpgconf --kill gpg-agent >/dev/null 2>&1 || true; rm -rf "$WORK"' EXIT
+stop_agent() {
+	# The agent of the temporary keyring is closed before its folder goes, and its socket folder with it.
+	timeout 10 gpgconf --homedir "$WORK/home" --kill all >/dev/null 2>&1 || true
+	gpgconf --homedir "$WORK/home" --remove-socketdir >/dev/null 2>&1 || true
+}
+trap 'stop_agent; rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/home"
 chmod 700 "$WORK/home"
 pass=0
