@@ -118,15 +118,61 @@ fx_build_tree "$WORK/t3" 1790000300 "$WORK/v2" > /dev/null 2>&1
 check "an upload of repomd.xml that fails ends red" 1 "$(FAKE_S3_FAIL=el10/x86_64/repodata/repomd.xml sync "$WORK/t3" b)"
 check "and says the previous pairs were put back" 1 "$(grep -c 'previous pairs were put back' "$WORK/out")"
 check "the pairs that went up before the failure are the previous ones again" "$before" "$(snapshot)"
-check "a read back that differs ends red" 1 "$(FAKE_S3_CORRUPT=fc44/x86_64/repodata/repomd.xml.asc sync "$WORK/t3" b)"
-check "and says it reads back different" 1 "$(grep -c 'reads back different' "$WORK/out")"
-check "the bucket holds the previous pair again" "$before" "$(snapshot)"
-# the pair the bucket does not hold anymore is named, and the run does not claim it was put back
-check "and names the repository it could not put back" 1 "$(grep -c 'the previous pair of fc44/x86_64 could not be put back' "$WORK/out")"
-check "and does not claim the pairs were put back" 0 "$(grep -c 'previous pairs were put back' "$WORK/out")"
-# a rollback that cannot be done is said out loud, and it names the repository it was for
-check "a rollback that cannot be done ends red" 1 "$(FAKE_S3_FAIL=fc45/x86_64/repodata/repomd.xml sync "$WORK/t3" b)"
-check "and names the repository whose pair could not be put back" 1 "$(grep -c 'could not put back the previous pair of fc45/x86_64' "$WORK/out")"
+# every case below starts from a bucket of its own, so what one leaves broken is not what the next one finds
+gpg --batch --no-default-keyring --keyring "$WORK/ring.kbx" --import "$WORK/archive.asc" > /dev/null 2>&1
+published() { sync "$WORK/t2" "$1" > /dev/null; } # <bucket>: it holds a good publication
+pair_of() { (cd "$FAKE_S3/$1/o/$2/repodata" && cat repomd.xml repomd.xml.asc | sha256sum | cut -d' ' -f1); }
+verifies() { gpgv --keyring "$WORK/ring.kbx" "$FAKE_S3/$1/o/$2/repodata/repomd.xml.asc" "$FAKE_S3/$1/o/$2/repodata/repomd.xml" > /dev/null 2>&1 && echo 1 || echo 0; }
+said() { grep -c -- "$1" "$WORK/out"; }
+FC45=fc45/x86_64
+XML="$FC45/repodata/repomd.xml"
+
+published corrupt
+before="$(pair_of corrupt fc44/x86_64)"
+check "a read back that differs ends red" 1 "$(FAKE_S3_CORRUPT=fc44/x86_64/repodata/repomd.xml.asc sync "$WORK/t3" corrupt)"
+check "and says it reads back different" 1 "$(said 'reads back different')"
+check "a rollback that is corrupted too leaves a pair that is not the previous one" 0 "$([ "$(pair_of corrupt fc44/x86_64)" = "$before" ] && echo 1 || echo 0)"
+check "and the repository it could not put back is named" 1 "$(said 'could not be confirmed to hold the previous pair of fc44/x86_64')"
+check "and the run does not claim the pairs were put back" 0 "$(said 'previous pairs were put back')"
+
+# the signature of the new index goes up, the index does not, and the rollback of the signature fails
+published half
+before="$(pair_of half el9/x86_64)"
+check "a pair left half replaced ends red" 1 "$(FAKE_S3_FAIL_AT="$XML#1 $XML.asc#2" sync "$WORK/t3" half)"
+check "the bucket holds a signature that does not match its index" 0 "$(verifies half "$FC45")"
+check "and that repository is named" 1 "$(said "could not be confirmed to hold the previous pair of $FC45")"
+check "and the run does not claim the pairs were put back" 0 "$(said 'previous pairs were put back')"
+check "and a repository that went up before it holds its previous pair again" "$before" "$(pair_of half el9/x86_64)"
+
+# an upload of the rollback fails, and the bucket holds the previous pair all the same: it was never replaced
+published untouched
+before="$(pair_of untouched "$FC45")"
+check "a rollback upload that fails over a pair that never changed ends red" 1 "$(FAKE_S3_FAIL_AT="$XML.asc#1 $XML.asc#2" sync "$WORK/t3" untouched)"
+check "and says that upload failed" 1 "$(said "an upload of the previous pair of $FC45 failed")"
+check "the bucket holds the previous pair" "$before" "$(pair_of untouched "$FC45")"
+check "so it says the pairs were put back" 1 "$(said 'previous pairs were put back')"
+check "and names no repository as lost" 0 "$(said 'could not be confirmed')"
+
+# a pair that did not verify before the run is put back as it was: the run does not say it could not
+published stale
+cp "$FAKE_S3/stale/o/el9/x86_64/repodata/repomd.xml.asc" "$FAKE_S3/stale/o/$XML.asc"
+before="$(pair_of stale "$FC45")"
+check "a failure over a pair that was already broken ends red" 1 "$(FAKE_S3_FAIL_AT="$XML#1" sync "$WORK/t3" stale)"
+check "the bytes that were there are there again" "$before" "$(pair_of stale "$FC45")"
+check "and it says the pairs were put back" 1 "$(said 'previous pairs were put back')"
+check "and names no repository as lost" 0 "$(said 'could not be confirmed')"
+
+# a repository with no previous pair keeps what was uploaded, and the run says so
+check "a first publication that reads back different ends red" 1 "$(FAKE_S3_CORRUPT="$XML" sync "$WORK/t3" first)"
+check "the corrupted pair is still in the bucket" 0 "$(verifies first "$FC45")"
+check "and it says there was no previous pair to put back" 1 "$(said 'there was no previous pair to put back')"
+check "and names the repository that keeps the upload" 1 "$(said "no previous pair for .*$FC45")"
+check "and does not claim any pair was put back" 0 "$(said 'previous pairs were put back')"
+rm -rf "${WORK:?}/t6"; cp -r "$WORK/t2" "$WORK/t6"; rm -rf "$WORK/t6/fc45"
+sync "$WORK/t6" added > /dev/null
+check "a failure in a repository that is new to the bucket ends red" 1 "$(FAKE_S3_FAIL_AT="$XML#1" sync "$WORK/t3" added)"
+check "and says the previous pairs were put back" 1 "$(said 'previous pairs were put back')"
+check "and that the new one has none" 1 "$(said "no previous pair for .*$FC45")"
 check "an upload of a package that fails ends red before any metadata" 1 "$(FAKE_S3_FAIL=Packages/podup-1.2.4 sync "$WORK/t2" other)"
 check "and no repomd.xml went up" 0 "$(puts | grep -c repomd)"
 

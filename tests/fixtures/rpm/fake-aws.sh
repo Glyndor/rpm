@@ -2,6 +2,7 @@
 # A stand-in for the `aws` CLI that the publication tests put first on PATH: a bucket is the folder
 # $FAKE_S3/<bucket>/ and an object's sha256 metadata sits beside it. Every call goes to $FAKE_S3_LOG.
 #   FAKE_S3_FAIL     a substring of a key whose upload fails
+#   FAKE_S3_FAIL_AT  words `<key>#<n>`: the n-th upload of exactly that key, counted in the log, fails
 #   FAKE_S3_CORRUPT  a substring of a key whose bytes are stored altered (a read back that differs)
 printf '%s\n' "$*" >> "${FAKE_S3_LOG:-/dev/null}"
 args=("$@"); sub="$1 $2"; shift 2
@@ -28,6 +29,8 @@ case "$sub" in
 			s3://*)
 				rest="${dst#s3://}"; b="${rest%%/*}"; k="${rest#*/}"
 				case "$k" in *"${FAKE_S3_FAIL:-@@none@@}"*) echo "upload failed: $k" >&2; exit 1 ;; esac
+				nth="$(awk -v d="$dst" '$1 == "s3" && $2 == "cp" && $4 == d' "${FAKE_S3_LOG:-/dev/null}" | wc -l)"
+				case " ${FAKE_S3_FAIL_AT:-} " in *" $k#$nth "*) echo "upload failed: $k" >&2; exit 1 ;; esac
 				mkdir -p "$(dirname "$(obj "$b" "$k")")" "$(dirname "$(meta "$b" "$k")")"
 				cp "$src" "$(obj "$b" "$k")"
 				case "$k" in *"${FAKE_S3_CORRUPT:-@@none@@}"*) printf 'x' >> "$(obj "$b" "$k")" ;; esac

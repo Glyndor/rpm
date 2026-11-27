@@ -17,8 +17,9 @@
 #   4. for each repository, the signature and then repomd.xml. This is the one moment a client can
 #      see an index and a signature that do not match, and it fails closed (the client refuses it).
 #   5. every pair is read back from the bucket (not through the cache) and checked against the key;
-#      when anything is off, the previous pairs are put back, the bucket is read back again to prove
-#      that the rollback worked, and the run ends red naming the repository that was left broken.
+#      when anything is off, the previous pairs are put back, the bucket is read again, and the run
+#      ends red saying which repositories could not be confirmed to hold their previous pair and
+#      which had none to go back to.
 #   0. before anything goes up, a repository whose revision in the bucket is higher than the tree's is refused.
 #   6. objects that left the tree are noted in state/retired.tsv and deleted KEEP_DAYS (15) days after
 #      that, never earlier and never from a first level folder that is not in the tree.
@@ -115,32 +116,48 @@ restore() { # put the previous pairs back; the run still ends red
 	for r in "${PAIRS[@]}"; do
 		[ -n "${TOUCHED[$r]:-}" ] || continue
 		[ -f "$WORK/previous/$r/repomd.xml" ] || continue
-		put_pair "$r" "$WORK/previous/$r" || echo "::error::could not put back the previous pair of $r" >&2
+		put_pair "$r" "$WORK/previous/$r" || echo "::error::sync-tree: an upload of the previous pair of $r failed" >&2
 	done
 }
-check_previous() { # the pairs the bucket holds are the ones that were kept; prints the ones that are not
-	local r bad=""
+# Prints the repositories whose bucket could not be confirmed to hold, byte for byte, the pair that
+# was kept. A failed upload of the rollback does not decide it: the object may never have changed.
+# The signature is not checked here, since a pair that did not verify before the run is put back as it was.
+not_restored() {
+	local r file lost=""
 	for r in "${PAIRS[@]}"; do
 		[ -n "${TOUCHED[$r]:-}" ] || continue
 		[ -f "$WORK/previous/$r/repomd.xml" ] || continue
-		s3 cp "s3://$BUCKET/$r/repodata/repomd.xml" "$WORK/previous/$r/repomd.xml.now" || { bad="$bad $r"; continue; }
-		s3 cp "s3://$BUCKET/$r/repodata/repomd.xml.asc" "$WORK/previous/$r/repomd.xml.asc.now" || { bad="$bad $r"; continue; }
-		cmp -s "$WORK/previous/$r/repomd.xml" "$WORK/previous/$r/repomd.xml.now" || { bad="$bad $r"; continue; }
-		cmp -s "$WORK/previous/$r/repomd.xml.asc" "$WORK/previous/$r/repomd.xml.asc.now" || { bad="$bad $r"; continue; }
-		gpgv --keyring "$WORK/ring.kbx" "$WORK/previous/$r/repomd.xml.asc.now" "$WORK/previous/$r/repomd.xml.now" > /dev/null 2>&1 || { bad="$bad $r"; continue; }
+		mkdir -p "$WORK/restored/$r"
+		for file in repomd.xml repomd.xml.asc; do
+			if s3 cp "s3://$BUCKET/$r/repodata/$file" "$WORK/restored/$r/$file" &&
+				cmp -s "$WORK/previous/$r/$file" "$WORK/restored/$r/$file"; then continue; fi
+			lost="$lost $r"
+			break
+		done
 	done
-	printf '%s' "${bad# }"
+	printf '%s' "${lost# }"
+}
+roll_back() { # <what went wrong>: put the previous pairs back and end the run saying what the bucket holds
+	local r lost kept="" fresh="" outcome
+	restore
+	lost="$(not_restored)"
+	for r in "${PAIRS[@]}"; do
+		[ -n "${TOUCHED[$r]:-}" ] || continue
+		if [ -f "$WORK/previous/$r/repomd.xml" ]; then kept="$kept $r"; else fresh="$fresh $r"; fi
+	done
+	if [ -n "$lost" ]; then
+		outcome="the bucket could not be confirmed to hold the previous pair of $lost"
+	elif [ -n "$kept" ]; then
+		outcome="the previous pairs were put back"
+	else
+		outcome="there was no previous pair to put back"
+	fi
+	[ -z "$fresh" ] || outcome="$outcome; no previous pair for ${fresh# }, so what this run uploaded there stays in the bucket"
+	die "$1; $outcome"
 }
 for r in "${PAIRS[@]}"; do
 	TOUCHED[$r]=1
-	put_pair "$r" "$TREE/$r/repodata" || {
-		restore
-		bad="$(check_previous)"
-		if [ -n "$bad" ]; then
-			die "cannot upload the metadata of $r; the previous pair of $bad could not be put back and the bucket holds a pair that does not match"
-		fi
-		die "cannot upload the metadata of $r; the previous pairs were put back"
-	}
+	put_pair "$r" "$TREE/$r/repodata" || roll_back "cannot upload the metadata of $r"
 done
 for r in "${PAIRS[@]}"; do
 	mkdir -p "$WORK/back/$r"
@@ -152,14 +169,7 @@ for r in "${PAIRS[@]}"; do
 		cmp -s "$WORK/back/$r/repomd.xml.asc" "$TREE/$r/repodata/repomd.xml.asc" || ok=0
 		gpgv --keyring "$WORK/ring.kbx" "$WORK/back/$r/repomd.xml.asc" "$WORK/back/$r/repomd.xml" > /dev/null 2>&1 || ok=0
 	fi
-	if [ "$ok" -eq 0 ]; then
-		restore
-		bad="$(check_previous)"
-		if [ -n "$bad" ]; then
-			die "$r reads back different from what was uploaded; the previous pair of $bad could not be put back and the bucket holds a pair that does not match"
-		fi
-		die "$r reads back different from what was uploaded; the previous pairs were put back"
-	fi
+	[ "$ok" -eq 1 ] || roll_back "$r reads back different from what was uploaded"
 done
 
 # --- 6: what left the tree is deleted only after the metadata that referenced it has expired ------------
