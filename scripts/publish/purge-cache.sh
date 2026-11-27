@@ -58,7 +58,9 @@ flush() {
 for group in "${GROUPS_[@]}"; do
 	read -r -a urls <<< "$group"
 	if [ "${#urls[@]}" -gt 30 ]; then
-		# an `install` or a very large group has no pair to keep together: it is cut at 30
+		# an `install` or a very large group has no pair to keep together: it is cut at 30, after what
+		# was gathered before it has gone
+		flush
 		for ((i = 0; i < ${#urls[@]}; i += 30)); do batch=("${urls[@]:i:30}"); flush; done
 		continue
 	fi

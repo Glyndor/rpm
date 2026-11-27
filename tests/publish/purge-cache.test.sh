@@ -44,6 +44,14 @@ check "a long list still succeeds" 0 "$(run https://rpm.glyndor.net "$T")"
 check "in more than one request" 1 "$([ "$(wc -l < "$WORK/bodies")" -ge 3 ] && echo 1 || echo 0)"
 check "none with more than 30 URLs" 0 "$(jq -r '.files | length' "$WORK/bodies" | awk '$1 > 30' | wc -l)"
 check "every URL once" 0 "$(urls | uniq -d | wc -l)"
+# a group too big for one request is cut, and the URLs gathered before it are still sent
+expected() { # <tree>: the URLs of the files that change in place, and of the root
+	{
+		(cd "$1" && find . -type f ! -path '*/Packages/*' ! -name '[0-9a-f]*-primary.xml.gz' -printf '%P\n' | sed 's|^|https://rpm.glyndor.net/|')
+		echo https://rpm.glyndor.net/
+	} | sort
+}
+check "and none of them is lost before the long group" "$(expected "$T")" "$(urls)"
 # the signature and the index it signs, and the repository file of the id, are never in two requests
 mkdir -p "$T/fc44/x86_64/repodata" "$T/fc44/aarch64/repodata"
 for f in fc44/glyndor.repo fc44/x86_64/repodata/repomd.xml fc44/x86_64/repodata/repomd.xml.asc fc44/aarch64/repodata/repomd.xml fc44/aarch64/repodata/repomd.xml.asc; do echo x > "$T/$f"; done
