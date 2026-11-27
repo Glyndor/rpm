@@ -19,6 +19,10 @@ check() { # <description> <expected> <actual>
 	if [ "$2" = "$3" ]; then pass=$((pass + 1)); echo "ok    $1"
 	else fail=$((fail + 1)); echo "FAIL  $1 (want '$2', got '$3')"; fi
 }
+# With one of these missing about half of the cases still pass, since they expect a refusal: name it and stop.
+for tool in rpm rpmbuild rpmsign createrepo_c gpg gpgv jq; do
+	command -v "$tool" > /dev/null 2>&1 || { echo "FAIL  $tool is needed by this suite and was not found"; exit 1; }
+done
 fx_init "$WORK"; fx_archive_key
 mkdir -p "$WORK/v1/p" "$WORK/v2/p" "$WORK/bin" "$WORK/w"
 fx_rpm "$WORK/v1/p" podup 1.2.3 1.glyndor.any noarch
