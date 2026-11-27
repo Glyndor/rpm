@@ -17,7 +17,8 @@
 #   4. for each repository, the signature and then repomd.xml. This is the one moment a client can
 #      see an index and a signature that do not match, and it fails closed (the client refuses it).
 #   5. every pair is read back from the bucket (not through the cache) and checked against the key;
-#      when anything is off, the previous pairs are put back and the run ends red.
+#      when anything is off, the previous pairs are put back, the bucket is read back again to prove
+#      that the rollback worked, and the run ends red naming the repository that was left broken.
 #   0. before anything goes up, a repository whose revision in the bucket is higher than the tree's is refused.
 #   6. objects that left the tree are noted in state/retired.tsv and deleted KEEP_DAYS (15) days after
 #      that, never earlier and never from a first level folder that is not in the tree.
@@ -107,16 +108,40 @@ put_pair() { # <repository> <directory holding repomd.xml and repomd.xml.asc>
 	s3 cp "$2/repomd.xml.asc" "s3://$BUCKET/$1/repodata/repomd.xml.asc" --cache-control "public, max-age=60" || return 1
 	s3 cp "$2/repomd.xml" "s3://$BUCKET/$1/repodata/repomd.xml" --cache-control "public, max-age=60" || return 1
 }
+gpg --batch --no-default-keyring --keyring "$WORK/ring.kbx" --import "$TREE/glyndor-rpm-key.asc" > /dev/null 2>&1 || die "cannot read the archive key"
+declare -A TOUCHED=()
 restore() { # put the previous pairs back; the run still ends red
 	local r
 	for r in "${PAIRS[@]}"; do
-		if [ -f "$WORK/previous/$r/repomd.xml" ]; then put_pair "$r" "$WORK/previous/$r" || echo "::error::could not restore $r" >&2; fi
+		[ -n "${TOUCHED[$r]:-}" ] || continue
+		[ -f "$WORK/previous/$r/repomd.xml" ] || continue
+		put_pair "$r" "$WORK/previous/$r" || echo "::error::could not put back the previous pair of $r" >&2
 	done
 }
+check_previous() { # the pairs the bucket holds are the ones that were kept; prints the ones that are not
+	local r bad=""
+	for r in "${PAIRS[@]}"; do
+		[ -n "${TOUCHED[$r]:-}" ] || continue
+		[ -f "$WORK/previous/$r/repomd.xml" ] || continue
+		s3 cp "s3://$BUCKET/$r/repodata/repomd.xml" "$WORK/previous/$r/repomd.xml.now" || { bad="$bad $r"; continue; }
+		s3 cp "s3://$BUCKET/$r/repodata/repomd.xml.asc" "$WORK/previous/$r/repomd.xml.asc.now" || { bad="$bad $r"; continue; }
+		cmp -s "$WORK/previous/$r/repomd.xml" "$WORK/previous/$r/repomd.xml.now" || { bad="$bad $r"; continue; }
+		cmp -s "$WORK/previous/$r/repomd.xml.asc" "$WORK/previous/$r/repomd.xml.asc.now" || { bad="$bad $r"; continue; }
+		gpgv --keyring "$WORK/ring.kbx" "$WORK/previous/$r/repomd.xml.asc.now" "$WORK/previous/$r/repomd.xml.now" > /dev/null 2>&1 || { bad="$bad $r"; continue; }
+	done
+	printf '%s' "${bad# }"
+}
 for r in "${PAIRS[@]}"; do
-	put_pair "$r" "$TREE/$r/repodata" || { restore; die "cannot upload the metadata of $r; the previous pairs were put back"; }
+	TOUCHED[$r]=1
+	put_pair "$r" "$TREE/$r/repodata" || {
+		restore
+		bad="$(check_previous)"
+		if [ -n "$bad" ]; then
+			die "cannot upload the metadata of $r; the previous pair of $bad could not be put back and the bucket holds a pair that does not match"
+		fi
+		die "cannot upload the metadata of $r; the previous pairs were put back"
+	}
 done
-gpg --batch --no-default-keyring --keyring "$WORK/ring.kbx" --import "$TREE/glyndor-rpm-key.asc" > /dev/null 2>&1 || die "cannot read the archive key"
 for r in "${PAIRS[@]}"; do
 	mkdir -p "$WORK/back/$r"
 	ok=1
@@ -127,7 +152,14 @@ for r in "${PAIRS[@]}"; do
 		cmp -s "$WORK/back/$r/repomd.xml.asc" "$TREE/$r/repodata/repomd.xml.asc" || ok=0
 		gpgv --keyring "$WORK/ring.kbx" "$WORK/back/$r/repomd.xml.asc" "$WORK/back/$r/repomd.xml" > /dev/null 2>&1 || ok=0
 	fi
-	if [ "$ok" -eq 0 ]; then restore; die "$r reads back different from what was uploaded; the previous pairs were put back"; fi
+	if [ "$ok" -eq 0 ]; then
+		restore
+		bad="$(check_previous)"
+		if [ -n "$bad" ]; then
+			die "$r reads back different from what was uploaded; the previous pair of $bad could not be put back and the bucket holds a pair that does not match"
+		fi
+		die "$r reads back different from what was uploaded; the previous pairs were put back"
+	fi
 done
 
 # --- 6: what left the tree is deleted only after the metadata that referenced it has expired ------------

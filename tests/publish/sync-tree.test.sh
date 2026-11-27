@@ -121,6 +121,12 @@ check "the pairs that went up before the failure are the previous ones again" "$
 check "a read back that differs ends red" 1 "$(FAKE_S3_CORRUPT=fc44/x86_64/repodata/repomd.xml.asc sync "$WORK/t3" b)"
 check "and says it reads back different" 1 "$(grep -c 'reads back different' "$WORK/out")"
 check "the bucket holds the previous pair again" "$before" "$(snapshot)"
+# the pair the bucket does not hold anymore is named, and the run does not claim it was put back
+check "and names the repository it could not put back" 1 "$(grep -c 'the previous pair of fc44/x86_64 could not be put back' "$WORK/out")"
+check "and does not claim the pairs were put back" 0 "$(grep -c 'previous pairs were put back' "$WORK/out")"
+# a rollback that cannot be done is said out loud, and it names the repository it was for
+check "a rollback that cannot be done ends red" 1 "$(FAKE_S3_FAIL=fc45/x86_64/repodata/repomd.xml sync "$WORK/t3" b)"
+check "and names the repository whose pair could not be put back" 1 "$(grep -c 'could not put back the previous pair of fc45/x86_64' "$WORK/out")"
 check "an upload of a package that fails ends red before any metadata" 1 "$(FAKE_S3_FAIL=Packages/podup-1.2.4 sync "$WORK/t2" other)"
 check "and no repomd.xml went up" 0 "$(puts | grep -c repomd)"
 
