@@ -175,9 +175,10 @@ done
 # --- 6: what left the tree is deleted only after the metadata that referenced it has expired ------------
 # The tree is rebuilt every run, so nothing in it says when an object stopped being part of it; state/retired.tsv
 # in the bucket does (`<key> <TAB> <epoch it was first seen out of the tree>`). An object is deleted once that
-# was KEEP_DAYS ago (14 days, the longest validity apt gives its signed metadata, and one more of cache), never
-# by the date it was uploaded. It fails closed: nothing is deleted from a folder that is not in the tree of this
-# run, whatever the config says, so the folder of an id that is finished stays with its last signed repomd.xml.
+# was KEEP_DAYS ago, never by the date it was uploaded. KEEP_DAYS is a chosen window, not a bound taken from the
+# metadata: repomd.xml carries no expiry, so a client still holding an index older than that finds what it names
+# gone. It fails closed: nothing is deleted from a folder that is not in the tree of this run, whatever the config
+# says, so the folder of an id that is finished stays with its last signed repomd.xml.
 NOW="${SYNC_NOW:-$(date +%s)}"
 declare -A RET=()
 if [ -n "${THERE[state/retired.tsv]:-}" ]; then
