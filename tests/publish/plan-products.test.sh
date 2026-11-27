@@ -36,6 +36,19 @@ RPM='{"name":"x-1-1.glyndor.any.x86_64.rpm","size":4}'
 for p in podman podup epistle helmly-agent helmly epistle-panel; do release "$p" v1.0.0 '{"name":"notes.txt","size":1}'; done
 plan() { ARCHIVE_URL="${1:-file://$WORK/nothing}" bash "$WORK/repo/scripts/publish/plan-products.sh" 2> "$WORK/err"; }
 
+rm "$WORK/repo/config/products.txt"
+plan > "$WORK/out"; status=$?
+check "a missing product list stops the run" 1 "$status"
+check "a missing product list reports the error" 1 "$(grep -c 'config/products.txt cannot be read or lists no product' "$WORK/err")"
+check "a missing product list emits no plan" "" "$(cat "$WORK/out")"
+
+printf '# products\n\n  # still no products\n' > "$WORK/repo/config/products.txt"
+plan > "$WORK/out"; status=$?
+check "an empty product list stops the run" 1 "$status"
+check "an empty product list reports the error" 1 "$(grep -c 'config/products.txt cannot be read or lists no product' "$WORK/err")"
+check "an empty product list emits no plan" "" "$(cat "$WORK/out")"
+cp "$HERE/config/products.txt" "$WORK/repo/config/products.txt"
+
 check "nothing is planned while no release carries an rpm" "" "$(plan)"
 check "and each product is skipped with a notice" 6 "$(grep -c '::notice::' "$WORK/err")"
 release podup v1.2.3 "$RPM"; release epistle v0.4.0 "$RPM,{\"name\":\"y.deb\",\"size\":2}"
