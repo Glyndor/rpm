@@ -258,7 +258,7 @@ jobs:
       apt-packages: shellcheck python3-yaml rpm createrepo-c python3-cryptography python3-venv
 
   # A warning that something a job uses is deprecated or going away turns the pull request red. It reads the
-  # jobs of this run; tests-heavy.yml reads its own. Neither name is in the ruleset of main, and the gate does
+  # jobs of this run; tests-heavy.yml reads its own. The ruleset of main requires both names, and the gate does
   # not wait for this one. It carries no `needs:` and no `if:`: it starts with the run and waits for `gate`,
   # which waits for every other job, so it holds a runner while the run lasts.
   deprecations:
