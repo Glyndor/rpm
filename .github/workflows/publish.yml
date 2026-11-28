@@ -1,6 +1,6 @@
 name: Publish rpm repository
 
-# Rebuilds the signed rpm repository at https://rpm.glyndor.net from the latest release of each product
+# Rebuilds the signed rpm repository at https://rpm.glyndor.net from the newest version release of each product
 # and, only when asked to publish, uploads it to Cloudflare R2.
 #
 # Two modes, one pipeline. `rehearsal` (the default of a manual run) builds the whole tree, signs it
@@ -9,7 +9,7 @@ name: Publish rpm repository
 # run that picks it) uses the archive key and the bucket credentials, and only from main.
 #
 # Jobs and what each holds (rules of the organization for jobs that sign and publish):
-#   plan      contents: read. Resolves the latest tag of each product once, fixes the commit, refuses a
+#   plan      contents: read. Chooses the release of each product once, fixes the commit, refuses a
 #             publish that does not come from main.
 #   admit     contents: read. Downloads and admits the releases (signature, set, header, attestation).
 #   rehearse  contents: read. Re-admits, builds and signs with a throwaway key. No secret, no environment.
@@ -45,7 +45,7 @@ jobs:
   plan:
     name: Plan
     runs-on: ubuntu-26.04
-    # Bound, not yet measured: it makes six API calls. The first runs will set a tighter number.
+    # Bound, not yet measured: it makes at most two API calls for each product. The first runs will set a tighter number.
     timeout-minutes: 10
     permissions:
       contents: read
