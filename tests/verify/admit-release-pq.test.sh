@@ -4,8 +4,9 @@
 # the post-quantum design, plus a required list that a typo cannot switch off. The cases that
 # need a verifier use a cryptography with ML-DSA (50.0.2 or later, pinned by hash in
 # scripts/verify/verify-release-requirements.txt): a path to its python in
-# ADMIT_TEST_MLDSA_PYTHON, or a virtual environment made here. When neither is available those
-# cases are skipped, said so, and counted as skipped, not as passed.
+# ADMIT_TEST_MLDSA_PYTHON, or a virtual environment made here. When neither is available the run
+# fails: those cases are the point of this file, so a suite that cannot execute them is red, not
+# green with a skip in it.
 # Requires: rpm (rpmbuild), python3 with cryptography.
 set -u
 
@@ -15,7 +16,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ADMIT="$HERE/scripts/verify/admit-release.sh"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
-pass=0; fail=0; skip=0
+pass=0; fail=0
 check() { # <description> <expected> <actual>
 	if [ "$2" = "$3" ]; then pass=$((pass + 1)); echo "ok    $1"
 	else fail=$((fail + 1)); echo "FAIL  $1 (want '$2', got '$3')"; fi
@@ -24,17 +25,22 @@ fx_init "$WORK"
 fx_static_release "$WORK/base" podup 1.2.3 x86_64,aarch64
 X="podup-1.2.3-1.glyndor.any.x86_64.rpm"; A="podup-1.2.3-1.glyndor.any.aarch64.rpm"
 
-# A python that can verify ML-DSA, if there is one.
+# A python that can verify ML-DSA. There is no such thing here without one: the cases that verify a
+# real second signature are the point of this file, so a run that cannot execute them is red.
 PQPY="${ADMIT_TEST_MLDSA_PYTHON:-}"
-if [ -z "$PQPY" ] && python3 -m venv "$WORK/venv" >/dev/null 2>&1 \
-	&& "$WORK/venv/bin/python" -m pip install --quiet --disable-pip-version-check --require-hashes \
-		--only-binary=:all: -r "$HERE/scripts/verify/verify-release-requirements.txt" >/dev/null 2>&1; then
-	PQPY="$WORK/venv/bin/python"
+if [ -z "$PQPY" ]; then
+	if python3 -m venv "$WORK/venv" >/dev/null 2>&1 \
+		&& "$WORK/venv/bin/python" -m pip install --quiet --disable-pip-version-check --require-hashes \
+			--only-binary=:all: -r "$HERE/scripts/verify/verify-release-requirements.txt" >/dev/null 2>&1; then
+		PQPY="$WORK/venv/bin/python"
+	fi
 fi
-if [ -n "$PQPY" ] && ! "$PQPY" -c 'from cryptography.hazmat.primitives.asymmetric.mldsa import MLDSA65PrivateKey' 2>/dev/null; then
-	PQPY=""
+if [ -z "$PQPY" ] || ! "$PQPY" -c 'from cryptography.hazmat.primitives.asymmetric.mldsa import MLDSA65PrivateKey' 2>/dev/null; then
+	echo "FAIL  no cryptography with ML-DSA-65: install scripts/verify/verify-release-requirements.txt into a virtual environment"
+	echo "0 passed, 1 failed"
+	printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" 0 1
+	exit 1
 fi
-[ -n "$PQPY" ] || echo "NOTE  no cryptography with ML-DSA here: the cases that verify a real second signature are skipped"
 
 run() { # <keyring dir> <release dir> [python bin dir]: the verdict of the admission
 	local py_path="$PATH"
@@ -89,37 +95,33 @@ keyring k6; printf 'podup\n' > "$WORK/k6/pq-required-products"; rm "$WORK/k6/gly
 refused "a required product when the second key file is missing" "requires the hybrid" "$WORK/k6" "$WORK/base"
 
 # --- the cases that verify a real second signature -------------------------------------------------
-if [ -z "$PQPY" ]; then
-	skip=$((skip + 1)); echo "SKIP  valid, invalid and foreign second signatures (no ML-DSA library)"
-else
-	PQBIN="$(dirname "$PQPY")"
-	pqsign() { # <seed> <file>
-		"$PQPY" -I "$HERE/tests/fixtures/rpm/release-key.py" sign-pq "$1" "$2"
-	}
-	mkdir -p "$WORK/pq1" "$WORK/pq2"
-	"$PQPY" -I "$HERE/tests/fixtures/rpm/release-key.py" gen-pq "$WORK/pq1"
-	"$PQPY" -I "$HERE/tests/fixtures/rpm/release-key.py" gen-pq "$WORK/pq2"
-	keyring kp "$(cat "$WORK/pq1/pq.b64")"
-	copy "$WORK/base"; pqsign "$WORK/pq1/pq.seed" "$WORK/r/$X"; pqsign "$WORK/pq1/pq.seed" "$WORK/r/$A"
-	out="$(run "$WORK/kp" "$WORK/r" "$PQBIN")"; check "both signatures valid: admitted" 0 "$?"
-	keyring kpr "$(cat "$WORK/pq1/pq.b64")"; printf 'podup\n' > "$WORK/kpr/pq-required-products"
-	out="$(run "$WORK/kpr" "$WORK/r" "$PQBIN")"; check "both signatures valid, required: admitted" 0 "$?"
-	check "the required state is said" 1 "$(printf '%s' "$out" | grep -c 'required for podup: yes')"
-	copy "$WORK/base"; pqsign "$WORK/pq1/pq.seed" "$WORK/r/$X"
-	refused "required, and only one of the two packages carries it" "no ML-DSA-65 signature for $A" "$WORK/kpr" "$WORK/r" "$PQBIN"
-	copy "$WORK/base"; pqsign "$WORK/pq2/pq.seed" "$WORK/r/$X"; pqsign "$WORK/pq1/pq.seed" "$WORK/r/$A"
-	refused "a second signature made by another key" "ML-DSA-65 signature of $X is not valid" "$WORK/kp" "$WORK/r" "$PQBIN"
-	copy "$WORK/base"; pqsign "$WORK/pq1/pq.seed" "$WORK/r/$X"; pqsign "$WORK/pq1/pq.seed" "$WORK/r/$A"
-	printf 'x' >> "$WORK/r/$X"
-	refused "a package changed after both signatures" "invalid signature for $X" "$WORK/kp" "$WORK/r" "$PQBIN"
-	copy "$WORK/base"; pqsign "$WORK/pq1/pq.seed" "$WORK/r/$X"; pqsign "$WORK/pq1/pq.seed" "$WORK/r/$A"
-	head -c 64 /dev/zero > "$WORK/r/$X.sig"
-	refused "a valid second signature does not rescue a bad first one" "invalid signature for $X" "$WORK/kp" "$WORK/r" "$PQBIN"
-	cp "$WORK/pq1/pq.b64" "$WORK/kp/two"; { cat "$WORK/pq2/pq.b64"; cat "$WORK/pq1/pq.b64"; } > "$WORK/kp/glyndor-release-mldsa65.b64"
-	copy "$WORK/base"; pqsign "$WORK/pq1/pq.seed" "$WORK/r/$X"; pqsign "$WORK/pq1/pq.seed" "$WORK/r/$A"
-	out="$(run "$WORK/kp" "$WORK/r" "$PQBIN")"; check "a rotation overlap: either key admits" 0 "$?"
-fi
+PQBIN="$(dirname "$PQPY")"
+pqsign() { # <seed> <file>
+	"$PQPY" -I "$HERE/tests/fixtures/rpm/release-key.py" sign-pq "$1" "$2"
+}
+mkdir -p "$WORK/pq1" "$WORK/pq2"
+"$PQPY" -I "$HERE/tests/fixtures/rpm/release-key.py" gen-pq "$WORK/pq1"
+"$PQPY" -I "$HERE/tests/fixtures/rpm/release-key.py" gen-pq "$WORK/pq2"
+keyring kp "$(cat "$WORK/pq1/pq.b64")"
+copy "$WORK/base"; pqsign "$WORK/pq1/pq.seed" "$WORK/r/$X"; pqsign "$WORK/pq1/pq.seed" "$WORK/r/$A"
+out="$(run "$WORK/kp" "$WORK/r" "$PQBIN")"; check "both signatures valid: admitted" 0 "$?"
+keyring kpr "$(cat "$WORK/pq1/pq.b64")"; printf 'podup\n' > "$WORK/kpr/pq-required-products"
+out="$(run "$WORK/kpr" "$WORK/r" "$PQBIN")"; check "both signatures valid, required: admitted" 0 "$?"
+check "the required state is said" 1 "$(printf '%s' "$out" | grep -c 'required for podup: yes')"
+copy "$WORK/base"; pqsign "$WORK/pq1/pq.seed" "$WORK/r/$X"
+refused "required, and only one of the two packages carries it" "no ML-DSA-65 signature for $A" "$WORK/kpr" "$WORK/r" "$PQBIN"
+copy "$WORK/base"; pqsign "$WORK/pq2/pq.seed" "$WORK/r/$X"; pqsign "$WORK/pq1/pq.seed" "$WORK/r/$A"
+refused "a second signature made by another key" "ML-DSA-65 signature of $X is not valid" "$WORK/kp" "$WORK/r" "$PQBIN"
+copy "$WORK/base"; pqsign "$WORK/pq1/pq.seed" "$WORK/r/$X"; pqsign "$WORK/pq1/pq.seed" "$WORK/r/$A"
+printf 'x' >> "$WORK/r/$X"
+refused "a package changed after both signatures" "invalid signature for $X" "$WORK/kp" "$WORK/r" "$PQBIN"
+copy "$WORK/base"; pqsign "$WORK/pq1/pq.seed" "$WORK/r/$X"; pqsign "$WORK/pq1/pq.seed" "$WORK/r/$A"
+head -c 64 /dev/zero > "$WORK/r/$X.sig"
+refused "a valid second signature does not rescue a bad first one" "invalid signature for $X" "$WORK/kp" "$WORK/r" "$PQBIN"
+cp "$WORK/pq1/pq.b64" "$WORK/kp/two"; { cat "$WORK/pq2/pq.b64"; cat "$WORK/pq1/pq.b64"; } > "$WORK/kp/glyndor-release-mldsa65.b64"
+copy "$WORK/base"; pqsign "$WORK/pq1/pq.seed" "$WORK/r/$X"; pqsign "$WORK/pq1/pq.seed" "$WORK/r/$A"
+out="$(run "$WORK/kp" "$WORK/r" "$PQBIN")"; check "a rotation overlap: either key admits" 0 "$?"
 
-echo "passed $pass, failed $fail, skipped $skip"
+echo "passed $pass, failed $fail"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
 [ "$fail" -eq 0 ]
