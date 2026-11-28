@@ -78,10 +78,9 @@ references_of() { # <path>
 
 			# A block scalar owns the lines that follow it, until a line
 			# at or above the key indentation. Inside one the word
-			# `uses:` is text and not a key: the shell in
-			# reusable-dependabot-freshness.yml greps for exactly that
-			# word, so reading it as a reference would be a false red on
-			# this repository today.
+			# `uses:` is text and not a key: a step that greps the workflows
+			# for exactly that word carries it in its shell, and reading it
+			# as a reference would be a false red.
 			if (inblock) {
 				if (trimmed == "" || ind > block_indent) {
 					if (block_is_uses && trimmed != "") {

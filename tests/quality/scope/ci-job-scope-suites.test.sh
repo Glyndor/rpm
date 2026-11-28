@@ -495,10 +495,8 @@ tests/ci/policy/workflows/gate-job.test.sh
 tests/ci/policy/workflows/required-check-names.test.sh
 tests/ci/policy/workflows/workflow-files.test.sh
 tests/ci/reusable/reusable-dco.test.sh
-tests/ci/reusable/reusable-dependabot-freshness.test.sh
 tests/ci/reusable/reusable-empty-diff.test.sh
 tests/ci/reusable/reusable-line-limit.test.sh
-tests/ci/reusable/reusable-schedule-freshness.test.sh
 tests/ci/reusable/reusable-shell-ci.test.sh
 tests/quality/lint/check-test-job-not-switchable-checkout.test.sh
 tests/quality/lint/check-test-job-not-switchable-context.test.sh

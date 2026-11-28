@@ -84,29 +84,23 @@ job_with() { # $1=dir $2=workflow file $3=job $4=reusable $5=with lines
 # --- every reusable: where its caller sits, and what its caller may pass ---------
 declare -A FILE=(
 	[reusable-dco.yml]=dco.yml
-	[reusable-dependabot-freshness.yml]=freshness.yml
 	[reusable-empty-diff.yml]=pr-hygiene.yml
 	[reusable-line-limit.yml]=line-limit.yml
-	[reusable-schedule-freshness.yml]=freshness.yml
 	[reusable-shell-ci.yml]=extra.yml
 	[reusable-workflow-lint.yml]=workflow-lint.yml
 )
 declare -A JOB=(
 	[reusable-dco.yml]=dco
-	[reusable-dependabot-freshness.yml]=dependabot-freshness
 	[reusable-empty-diff.yml]=empty-diff
 	[reusable-line-limit.yml]=line-limit
-	[reusable-schedule-freshness.yml]=freshness-itself
 	[reusable-shell-ci.yml]=shell-extra
 	[reusable-workflow-lint.yml]=workflow-lint
 )
 # Everything the list allows, so the caller is the most a caller may pass.
 declare -A ALLOWED=(
 	[reusable-dco.yml]=''
-	[reusable-dependabot-freshness.yml]=$'      max-age-days: 15\n'
 	[reusable-empty-diff.yml]=''
 	[reusable-line-limit.yml]=$'      extensions: "sh txt"\n'
-	[reusable-schedule-freshness.yml]=$'      workflow: update.yml\n      max-age-days: 3\n      max-age-hours: 24\n      count-any-conclusion: true\n'
 	[reusable-shell-ci.yml]=$'      test-command: ./tests/two.test.sh\n      apt-packages: shellcheck\n      skip-suite-paths: "docs/**"\n'
 	[reusable-workflow-lint.yml]=''
 )
@@ -143,8 +137,6 @@ reusable-line-limit.yml|soft-limit|100000
 reusable-line-limit.yml|exclude-pattern|".*"
 reusable-dco.yml|unlisted-input|x
 reusable-empty-diff.yml|unlisted-input|x
-reusable-dependabot-freshness.yml|unlisted-input|x
-reusable-schedule-freshness.yml|unlisted-input|x
 LIST
 
 # Two refused inputs on one caller are both named, not only the first.

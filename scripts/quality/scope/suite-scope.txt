@@ -109,6 +109,10 @@ tests/ci/policy/workflows/dependabot-config.test.sh
 	**/Containerfile*
 	tests/ci/policy/workflows/**
 
+tests/ci/policy/workflows/every-reusable-has-a-caller.test.sh
+	.github/workflows/**
+	tests/ci/policy/workflows/**
+
 tests/ci/policy/workflows/gate-job.test.sh
 	.github/workflows/tests.yml
 	tests/fixtures/ci/**
@@ -131,12 +135,6 @@ tests/ci/reusable/reusable-dco.test.sh
 	tests/fixtures/ci/**
 	tests/ci/reusable/**
 
-tests/ci/reusable/reusable-dependabot-freshness.test.sh
-	.github/dependabot.yml
-	.github/workflows/reusable-dependabot-freshness.yml
-	tests/fixtures/ci/**
-	tests/ci/reusable/**
-
 tests/ci/reusable/reusable-empty-diff.test.sh
 	.github/workflows/reusable-empty-diff.yml
 	tests/fixtures/ci/**
@@ -146,15 +144,6 @@ tests/ci/reusable/reusable-line-limit.test.sh
 	.github/workflows/reusable-line-limit.yml
 	.github/workflows/tests.yml
 	tests/fixtures/ci/**
-	tests/ci/reusable/**
-
-tests/ci/reusable/reusable-schedule-freshness.test.sh
-	.github/workflows/reusable-schedule-freshness.yml
-	tests/fixtures/ci/**
-	tests/ci/reusable/**
-
-tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh
-	.github/workflows/reusable-schedule-freshness.yml
 	tests/ci/reusable/**
 
 tests/ci/reusable/reusable-shell-ci.test.sh

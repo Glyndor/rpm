@@ -66,8 +66,7 @@ jobs:
       # release's linux_amd64 tarball as its checksums file lists it. The two
       # move together, here and in the sibling channels; a version changed
       # without its hash fails the install. Dependabot does not read a version
-      # written here, so scripts/monitoring/check-tool-versions.sh compares it
-      # with upstream from freshness.yml.
+      # written here, and no job of this repository compares it with upstream.
       ACTIONLINT_VERSION: v1.7.12
       ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
     steps:
