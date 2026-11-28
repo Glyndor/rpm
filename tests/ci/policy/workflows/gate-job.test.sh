@@ -10,7 +10,9 @@
 #   * a `shell` that does not wait for a cheap check runs the suite on a pull
 #     request that is already red, which is the cost the ordering exists to avoid;
 #   * a `gate` that accepts anything but `success` reads a skipped or cancelled job
-#     as a pass.
+#     as a pass;
+#   * `deprecations` reads the annotations of every other job once they are done. It carries no
+#     `needs:` and no `if:`: it waits for `gate` itself, and `gate` does not wait for it.
 #
 # The structure is read from the workflow and judged first on planted copies, so a
 # pass is shown to be a pass of a check that can fail; the shell of the `gate` step
@@ -58,21 +60,36 @@ def needs(job):
 if "gate" not in jobs:
     print("there is no job called gate")
 else:
-    others = set(jobs) - {"gate"}
+    # `deprecations` is a required check of its own and the gate does not wait for it: the gate is the job that answers
+    # for the suite and a pull request cannot change it, so a check that reads the run after it stands beside it.
+    others = set(jobs) - {"gate", "deprecations"}
     missing = sorted(others - needs("gate"))
     for job in missing:
         print(f"gate does not wait for {job}")
-    for job in sorted(needs("gate") - others):
+    for job in sorted(needs("gate") - (set(jobs) - {"gate"})):
         print(f"gate waits for {job}, which is not a job of this workflow")
     if str(jobs["gate"].get("if", "")).strip() != "always()":
         print("gate does not run when a job it waits for fails: its if: is not always()")
 if "shell" not in jobs:
     print("there is no job called shell")
 else:
-    for job in sorted(set(jobs) - {"gate", "shell"} - needs("shell")):
+    # `deprecations` reads the annotations of the others once they are done, so it comes after `shell`.
+    cheap = set(jobs) - {"gate", "shell", "deprecations"}
+    for job in sorted(cheap - needs("shell")):
         print(f"shell does not wait for {job}")
-    for job in sorted(needs("shell") - (set(jobs) - {"gate", "shell"})):
+    for job in sorted(needs("shell") - cheap):
         print(f"shell waits for {job}, which is not one of the cheap checks")
+if "deprecations" not in jobs:
+    print("there is no job called deprecations")
+else:
+    reader = jobs["deprecations"]
+    if "needs" in reader or "if" in reader:
+        print("deprecations carries needs: or if:, and a job that is skipped reports Success")
+    if "deprecations" in needs("gate"):
+        print("gate waits for deprecations, which waits for gate")
+    waits = [str((step.get("env") or {}).get("WAIT_FOR", "")) for step in reader.get("steps") or []]
+    if "gate" not in waits:
+        print("deprecations does not wait for gate, the job that ends after every other")
 # The verdict reads the results of the jobs it waits for and nothing else, in one step.
 steps = (jobs.get("gate") or {}).get("steps") or []
 if "gate" not in jobs:
@@ -130,6 +147,25 @@ check "a suite that does not wait for a cheap check is reported" "shell does not
 plant no-needs "del spec['jobs']['shell']['needs']"
 check "a suite that waits for nothing is reported once per cheap check" "7" "$(audit "$WORK/no-needs.yml" | grep -c '^shell does not wait')"
 
+plant dep-needs "spec['jobs']['deprecations']['needs'] = ['gate']"
+check "a deprecation read with needs: is reported" \
+	"deprecations carries needs: or if:, and a job that is skipped reports Success" "$(audit "$WORK/dep-needs.yml")"
+
+plant dep-if "spec['jobs']['deprecations']['if'] = 'always()'"
+check "a deprecation read with an if: is reported" \
+	"deprecations carries needs: or if:, and a job that is skipped reports Success" "$(audit "$WORK/dep-if.yml")"
+
+plant dep-eager "spec['jobs']['deprecations']['steps'][1]['env']['WAIT_FOR'] = 'dco'"
+check "a deprecation read that does not wait for the gate is reported" \
+	"deprecations does not wait for gate, the job that ends after every other" "$(audit "$WORK/dep-eager.yml")"
+
+plant dep-gone "del spec['jobs']['deprecations']"
+check "a workflow with no deprecation read is reported" "there is no job called deprecations" "$(audit "$WORK/dep-gone.yml")"
+
+plant dep-in-gate "spec['jobs']['gate']['needs'].append('deprecations')"
+check "a gate that waits for the deprecation read is reported" \
+	"gate waits for deprecations, which waits for gate" "$(audit "$WORK/dep-in-gate.yml")"
+
 plant gate-env "spec['jobs']['gate']['steps'][0]['env']['NEEDS'] = '\${{ toJSON(github) }}'"
 check "a gate that reads something other than the results of its jobs is reported" \
 	"the step of gate reads something other than toJSON(needs)" "$(audit "$WORK/gate-env.yml")"
@@ -171,6 +207,56 @@ check "no job at all: the gate fails rather than pass having looked at nothing" 
 check "and says why" "1" "$(said 'waits for no other job')"
 run_gate 'not json'
 check "a value that is not JSON: the gate fails" "1" "$rc"
+
+# --- the heavy run reads its own annotations ---------------------------------
+# tests.yml cannot see the jobs of tests-heavy.yml, so that workflow carries a read of its own, after its suites
+# and whatever they ended with.
+heavy_read() { # <workflow file>: one line per way the read is not there, or not after the run
+	python3 -I - "$1" <<'PY'
+import sys
+
+import yaml
+
+jobs = yaml.safe_load(open(sys.argv[1]))["jobs"]
+job = jobs.get("deprecations")
+if job is None:
+    print("there is no job called deprecations")
+    sys.exit(0)
+if "needs" in job or "if" in job:
+    print("deprecations carries needs: or if:, and a job that is skipped reports Success")
+last = [jobs[other].get("name", other) for other in jobs if other != "deprecations"]
+waits = [str((step.get("env") or {}).get("WAIT_FOR", "")) for step in job.get("steps") or []]
+for other in last:
+    if other not in waits:
+        print(f"deprecations does not wait for {other}")
+if not any("no-deprecation-notices" in str(step.get("run", "")) for step in job.get("steps") or []):
+    print("deprecations runs no reader of the annotations")
+PY
+}
+plant_heavy() { # <name> <python statement editing `spec`>
+	python3 -I - "$HERE/.github/workflows/tests-heavy.yml" "$WORK/$1.yml" "$2" <<'PY'
+import sys
+
+import yaml
+
+with open(sys.argv[1]) as fh:
+    spec = yaml.safe_load(fh)
+exec(sys.argv[3])
+with open(sys.argv[2], "w") as out:
+    yaml.safe_dump(spec, out, sort_keys=False)
+PY
+}
+check "the heavy workflow reads its annotations after its suites" "" "$(heavy_read "$HERE/.github/workflows/tests-heavy.yml")"
+plant_heavy heavy-gone "del spec['jobs']['deprecations']"
+check "a heavy workflow with no read is reported" "there is no job called deprecations" "$(heavy_read "$WORK/heavy-gone.yml")"
+plant_heavy heavy-eager "spec['jobs']['deprecations']['steps'][1]['env']['WAIT_FOR'] = 'other'"
+check "a read that does not wait for the heavy suites is reported" "deprecations does not wait for heavy tests" "$(heavy_read "$WORK/heavy-eager.yml")"
+plant_heavy heavy-if "spec['jobs']['deprecations']['if'] = 'always()'"
+check "a heavy read with an if: is reported" \
+	"deprecations carries needs: or if:, and a job that is skipped reports Success" "$(heavy_read "$WORK/heavy-if.yml")"
+plant_heavy heavy-mute "spec['jobs']['deprecations']['steps'] = [{'run': 'true'}]"
+check "a heavy read that runs no reader is reported" \
+	"$(printf 'deprecations does not wait for heavy tests\ndeprecations runs no reader of the annotations')" "$(heavy_read "$WORK/heavy-mute.yml")"
 
 echo "$pass passed, $fail failed"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"

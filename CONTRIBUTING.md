@@ -97,6 +97,11 @@ The suite and the shell lint (`shell`) wait for all of them, so a pull request
 that is already red does not install packages to run a suite. `gate` always runs
 and fails unless every other job succeeded.
 
+`deprecations` in `tests.yml`, and `heavy tests deprecations` in
+`tests-heavy.yml`, wait for the last job of their run, read the annotations of
+every job of it and fail on a warning that something is deprecated or going
+away. Neither is in the ruleset of `main`, and `gate` does not wait for them.
+
 A file may hold 500 lines of code (comments and blank lines do not count), and a
 folder twenty files directly. A folder over twenty is listed with a ceiling and a
 reason in `.github/folder-limit-exceptions.txt`; the ceiling can only go down.

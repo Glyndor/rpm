@@ -115,6 +115,7 @@ tests/ci/policy/workflows/every-reusable-has-a-caller.test.sh
 
 tests/ci/policy/workflows/gate-job.test.sh
 	.github/workflows/tests.yml
+	.github/workflows/tests-heavy.yml
 	tests/fixtures/ci/**
 	tests/ci/policy/workflows/**
 
@@ -243,18 +244,18 @@ tests/quality/lint/check-test-job-not-switchable-context.test.sh
 	tests/fixtures/ci/**
 	tests/quality/lint/**
 
-tests/quality/lint/check-test-job-not-switchable-inputs.test.sh
 tests/quality/lint/switch-rule-forms.test.sh
 	scripts/quality/lint/switch-rule-forms.json
 	.github/workflows/**
 
+tests/quality/lint/check-test-job-not-switchable-inputs.test.sh
 	.github/workflows/**
 	scripts/quality/lint/check-test-job-not-switchable.sh
 	scripts/quality/lint/switch-rule-forms.json
 	tests/quality/lint/**
-
 	tests/fixtures/ci/switch-forms.sh
 	tests/fixtures/ci/switch-forms-planted.json
+
 tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
 	.github/workflows/**
 	scripts/quality/lint/check-test-job-not-switchable.sh
@@ -289,9 +290,9 @@ tests/quality/lint/check-test-job-not-switchable.test.sh
 	scripts/quality/lint/switch-rule-forms.json
 	tests/ci/suites/check-suite-completeness.test.sh
 	tests/quality/lint/**
-
 	tests/fixtures/ci/switch-forms.sh
 	tests/fixtures/ci/switch-forms-planted.json
+
 tests/quality/lint/check-tooling-isolation.test.sh
 	.github/workflows/**
 	scripts/quality/lint/check-tooling-isolation.sh
@@ -300,6 +301,10 @@ tests/quality/lint/check-tooling-isolation.test.sh
 tests/quality/lint/lint-workflow-shell.test.sh
 	.github/workflows/**
 	scripts/quality/lint/lint-workflow-shell.sh
+	tests/quality/lint/**
+
+tests/quality/lint/no-deprecation-notices.test.sh
+	scripts/quality/lint/no-deprecation-notices.sh
 	tests/quality/lint/**
 
 tests/quality/scope/ci-job-scope-packages.test.sh
