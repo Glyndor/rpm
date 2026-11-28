@@ -82,8 +82,8 @@ for name, job in wf["jobs"].items():
         if uses.startswith("actions/checkout"):
             if step["with"].get("persist-credentials") is not False:
                 say("a checkout keeps its credentials in", name)
-            if name != "plan" and "needs.plan.outputs.sha" not in str(step["with"].get("ref")):
-                say("a checkout of something else than the planned commit in", name)
+            if name != "plan" and str(step["with"].get("ref")) != "${{ github.sha }}":
+                say("a checkout of something else than the commit of the run in", name)
         if uses.startswith("actions/download-artifact"):
             if "merge-multiple" in step["with"] or "runner.temp" not in step["with"].get("path", ""):
                 say("an artifact is merged or downloaded into the workspace in", name)
@@ -151,7 +151,8 @@ plant "a guard that no longer names main" 's = s.replace("refs/heads/main ] || {
 plant "a secret in the rehearsal" 's = s.replace("          EPOCH: ${{ needs.plan.outputs.epoch }}\n        run: bash scripts/publish/rehearse-tree.sh", "          EPOCH: ${{ needs.plan.outputs.epoch }}\n          K: ${{ secrets.GLYNDOR_RPM_GPG_PRIVATE_KEY }}\n        run: bash scripts/publish/rehearse-tree.sh")' "the rehearsal reads a secret"
 plant "the bucket credentials in the signing job" 's = s.replace("          PRODUCTS: ${{ needs.plan.outputs.products }}\n          EPOCH: ${{ needs.plan.outputs.epoch }}\n        run: bash scripts/publish/sign-tree.sh", "          PRODUCTS: ${{ needs.plan.outputs.products }}\n          EPOCH: ${{ needs.plan.outputs.epoch }}\n          R: ${{ secrets.GLYNDOR_RPM_R2_ENDPOINT }}\n        run: bash scripts/publish/sign-tree.sh")' "the job that holds the archive key holds bucket credentials"
 plant "write permissions on a job" 's = s.replace("    environment: publish\n    # Bound, not yet measured: an upload of the new files and a purge of a few dozen URLs.\n    timeout-minutes: 30\n    permissions:\n      contents: read", "    environment: publish\n    # Bound, not yet measured: an upload of the new files and a purge of a few dozen URLs.\n    timeout-minutes: 30\n    permissions:\n      contents: write")' "the permissions are not exactly contents: read in publish"
-plant "a checkout of the branch instead of the planned commit" 's = s.replace("ref: ${{ needs.plan.outputs.sha }}", "ref: ${{ github.ref }}", 1)' "a checkout of something else than the planned commit"
+plant "a checkout of the branch instead of the commit of the run" 's = s.replace("ref: ${{ github.sha }}", "ref: ${{ github.ref }}", 1)' "a checkout of something else than the commit of the run"
+plant "a checkout of a commit another job names" 's = s.replace("ref: ${{ github.sha }}", "ref: ${{ needs.plan.outputs.sha }}", 1)' "a checkout of something else than the commit of the run"
 plant "a checkout that keeps its credentials" 's = s.replace("persist-credentials: false", "persist-credentials: true", 1)' "keeps its credentials"
 plant "artifacts merged" 's = s.replace("          name: admitted\n          path: ${{ runner.temp }}/admitted\n      - name: Install rpm and createrepo_c", "          name: admitted\n          merge-multiple: true\n          path: ${{ runner.temp }}/admitted\n      - name: Install rpm and createrepo_c", 1)' "merged or downloaded into the workspace"
 plant "an action that is not pinned" 's = s.replace("actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9", "actions/upload-artifact@v4", 1)' "not an actions/* pinned by SHA"
