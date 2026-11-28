@@ -6,7 +6,8 @@
 # scripts/verify/verify-release-requirements.txt): a path to its python in
 # ADMIT_TEST_MLDSA_PYTHON, or a virtual environment made here. When neither is available the run
 # fails: those cases are the point of this file, so a suite that cannot execute them is red, not
-# green with a skip in it.
+# green with a skip in it. A fixed ML-DSA-65 vector made with another implementation is verified
+# too, so a verifier that only agrees with itself is red here as well.
 # Requires: rpm (rpmbuild), python3 with cryptography.
 set -u
 
@@ -121,6 +122,23 @@ refused "a valid second signature does not rescue a bad first one" "invalid sign
 cp "$WORK/pq1/pq.b64" "$WORK/kp/two"; { cat "$WORK/pq2/pq.b64"; cat "$WORK/pq1/pq.b64"; } > "$WORK/kp/glyndor-release-mldsa65.b64"
 copy "$WORK/base"; pqsign "$WORK/pq1/pq.seed" "$WORK/r/$X"; pqsign "$WORK/pq1/pq.seed" "$WORK/r/$A"
 out="$(run "$WORK/kp" "$WORK/r" "$PQBIN")"; check "a rotation overlap: either key admits" 0 "$?"
+
+# --- the fixed vector, made by another implementation -------------------------
+# tests/fixtures/rpm/vector.mldsa65.b64, vector.msg and vector.msg.mldsa65.sig are the public key,
+# the signed bytes and the signature of a known-answer vector made with OpenSSL 3.5.5
+# (openssl genpkey -algorithm ML-DSA-65 and openssl pkeyutl -sign -rawin), not with the library
+# under test: a verifier that agrees only with itself fails this vector. The three files are read
+# as they are committed, and a byte is changed only in a copy, inside the temporary directory.
+VECTOR="$HERE/tests/fixtures/rpm"
+v() { "$PQPY" -I "$HERE/scripts/verify/verify-release-sig.py" "$@"; }
+out="$(v mldsa65 "$VECTOR/vector.msg.mldsa65.sig" "$VECTOR/vector.msg" "$VECTOR/vector.mldsa65.b64" 2>&1)"
+check "the ML-DSA-65 vector made by another implementation verifies" 0 "$?"
+cp "$VECTOR/vector.msg" "$WORK/vector.msg"
+byte="$(od -An -tu1 -j 100 -N 1 "$WORK/vector.msg" | tr -d '[:space:]')"
+printf '%b' "\\x$(printf '%02x' "$(( byte ^ 1 ))")" | dd of="$WORK/vector.msg" bs=1 seek=100 count=1 conv=notrunc 2>/dev/null
+out="$(v mldsa65 "$VECTOR/vector.msg.mldsa65.sig" "$WORK/vector.msg" "$VECTOR/vector.mldsa65.b64" 2>&1)"; rc=$?
+check "the same vector with one byte of its message changed does not verify" 1 "$rc"
+check "and says why" 1 "$(printf '%s' "$out" | grep -cF 'not made by any listed release key')"
 
 echo "passed $pass, failed $fail"
 printf 'DONE %s %d %d\n' "${BASH_SOURCE[0]##*/}" "$pass" "$fail"
