@@ -41,20 +41,17 @@ check() { # <description> <expected> <actual>
 # The checks of a pull request, as the ruleset names them.
 REQUIRED="commit identity
 dco / Signed-off-by present on every commit
+deprecations
 empty-diff / empty diff
 folder limit
 gate
 heavy tests
+heavy tests deprecations
 line-limit / line limit
 secret scan
 shell / shellcheck
 shell / test
 workflow-lint / workflow-lint"
-
-# The checks a pull request runs that the ruleset does not wait for. A name is in one list or the other, so a
-# job nobody declared is still named.
-ADVISORY="deprecations
-heavy tests deprecations"
 
 # names <root>: the check names the workflows of the tree produce, one per line with the
 # file that produces it; and one line per offence of the event rule.
@@ -91,7 +88,7 @@ offences() { # $1=root: the offences, then the duplicated names, then a differen
 	out="$(names "$1")"
 	printf '%s\n' "$out" | grep '^OFFENCE ' | sed 's/^OFFENCE //' || true
 	printf '%s\n' "$out" | grep '^NAME ' | sed 's/^NAME //' | cut -f1 | sort | uniq -d | sed 's/^/produced more than once: /' || true
-	diff <(printf '%s\n%s\n' "$REQUIRED" "$ADVISORY" | sort) <(printf '%s\n' "$out" | grep '^NAME ' | sed 's/^NAME //' | cut -f1 | sort -u) \
+	diff <(printf '%s\n' "$REQUIRED" | sort) <(printf '%s\n' "$out" | grep '^NAME ' | sed 's/^NAME //' | cut -f1 | sort -u) \
 		| grep '^[<>]' | sed 's/^< /missing from the workflows: /; s/^> /not in the list of required names: /' || true
 }
 
