@@ -109,8 +109,13 @@ tests/ci/policy/workflows/dependabot-config.test.sh
 	**/Containerfile*
 	tests/ci/policy/workflows/**
 
+tests/ci/policy/workflows/every-reusable-has-a-caller.test.sh
+	.github/workflows/**
+	tests/ci/policy/workflows/**
+
 tests/ci/policy/workflows/gate-job.test.sh
 	.github/workflows/tests.yml
+	.github/workflows/tests-heavy.yml
 	tests/fixtures/ci/**
 	tests/ci/policy/workflows/**
 
@@ -131,12 +136,6 @@ tests/ci/reusable/reusable-dco.test.sh
 	tests/fixtures/ci/**
 	tests/ci/reusable/**
 
-tests/ci/reusable/reusable-dependabot-freshness.test.sh
-	.github/dependabot.yml
-	.github/workflows/reusable-dependabot-freshness.yml
-	tests/fixtures/ci/**
-	tests/ci/reusable/**
-
 tests/ci/reusable/reusable-empty-diff.test.sh
 	.github/workflows/reusable-empty-diff.yml
 	tests/fixtures/ci/**
@@ -146,15 +145,6 @@ tests/ci/reusable/reusable-line-limit.test.sh
 	.github/workflows/reusable-line-limit.yml
 	.github/workflows/tests.yml
 	tests/fixtures/ci/**
-	tests/ci/reusable/**
-
-tests/ci/reusable/reusable-schedule-freshness.test.sh
-	.github/workflows/reusable-schedule-freshness.yml
-	tests/fixtures/ci/**
-	tests/ci/reusable/**
-
-tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh
-	.github/workflows/reusable-schedule-freshness.yml
 	tests/ci/reusable/**
 
 tests/ci/reusable/reusable-shell-ci.test.sh
@@ -254,11 +244,17 @@ tests/quality/lint/check-test-job-not-switchable-context.test.sh
 	tests/fixtures/ci/**
 	tests/quality/lint/**
 
+tests/quality/lint/switch-rule-forms.test.sh
+	scripts/quality/lint/switch-rule-forms.json
+	.github/workflows/**
+
 tests/quality/lint/check-test-job-not-switchable-inputs.test.sh
 	.github/workflows/**
 	scripts/quality/lint/check-test-job-not-switchable.sh
 	scripts/quality/lint/switch-rule-forms.json
 	tests/quality/lint/**
+	tests/fixtures/ci/switch-forms.sh
+	tests/fixtures/ci/switch-forms-planted.json
 
 tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
 	.github/workflows/**
@@ -294,6 +290,8 @@ tests/quality/lint/check-test-job-not-switchable.test.sh
 	scripts/quality/lint/switch-rule-forms.json
 	tests/ci/suites/check-suite-completeness.test.sh
 	tests/quality/lint/**
+	tests/fixtures/ci/switch-forms.sh
+	tests/fixtures/ci/switch-forms-planted.json
 
 tests/quality/lint/check-tooling-isolation.test.sh
 	.github/workflows/**
@@ -303,6 +301,10 @@ tests/quality/lint/check-tooling-isolation.test.sh
 tests/quality/lint/lint-workflow-shell.test.sh
 	.github/workflows/**
 	scripts/quality/lint/lint-workflow-shell.sh
+	tests/quality/lint/**
+
+tests/quality/lint/no-deprecation-notices.test.sh
+	scripts/quality/lint/no-deprecation-notices.sh
 	tests/quality/lint/**
 
 tests/quality/scope/ci-job-scope-packages.test.sh
