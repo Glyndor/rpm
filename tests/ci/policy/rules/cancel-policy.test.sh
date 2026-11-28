@@ -28,7 +28,8 @@ check() { # <description> <expected> <actual>
 }
 
 # Workflows that run on push or schedule as well as on pull requests.
-for name in reusable-shell-ci reusable-workflow-lint reusable-line-limit; do
+for name in reusable-shell-ci reusable-workflow-lint reusable-line-limit \
+	reusable-schedule-freshness; do
 	f="$HERE/.github/workflows/$name.yml"
 	line="$(grep -E '^  cancel-in-progress:' "$f" | head -1)"
 	check "$name cancels only on a pull request" \

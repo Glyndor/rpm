@@ -43,6 +43,10 @@ check() { # <description> <expected> <actual>
 # ruleset requires.
 EXEMPT="publish.yml=schedule,workflow_dispatch"
 
+# The workflows that run on a pull request and on other events too: the events, and no other. Their
+# names are read like any other, since a pull request shows them.
+ALSO="freshness.yml=pull_request,push,schedule"
+
 # The checks of a pull request, as the ruleset names them.
 REQUIRED="commit identity
 dco / Signed-off-by present on every commit
@@ -58,15 +62,21 @@ shell / shellcheck
 shell / test
 workflow-lint / workflow-lint"
 
+# The checks a pull request runs that the ruleset does not wait for. A name is in one list or the other, so a
+# job nobody declared is still named.
+ADVISORY="freshness-itself / schedule freshness
+freshness-publish / schedule freshness"
+
 # names <root>: the check names the workflows of the tree produce, one per line with the
 # file that produces it; and one line per offence of the event rule.
 names() { # $1=root
-	python3 -I - "$1" "$HERE/tests/fixtures/ci/workflow-files.py" "$EXEMPT" <<'PY'
+	python3 -I - "$1" "$HERE/tests/fixtures/ci/workflow-files.py" "$EXEMPT" "$ALSO" <<'PY'
 import sys
 
-root, helper, exempt = sys.argv[1:4]
+root, helper, exempt, also = sys.argv[1:5]
 exec(open(helper).read())
 EXEMPT = {pair.split("=")[0]: set(pair.split("=")[1].split(",")) for pair in exempt.split()}
+ALSO = {pair.split("=")[0]: set(pair.split("=")[1].split(",")) for pair in also.split()}
 INNER = {}
 for path in enumerate_files(root):
     if path.startswith(".github/workflows/reusable-") and path.endswith(".yml"):
@@ -81,8 +91,9 @@ for path in enumerate_files(root):
         if events != EXEMPT[path.rsplit("/", 1)[1]]:
             print(f"OFFENCE {path}: runs on {', '.join(sorted(events)) or 'nothing'}, not on {', '.join(sorted(EXEMPT[path.rsplit('/', 1)[1]]))} alone")
         continue
-    if events != {"pull_request"}:
-        print(f"OFFENCE {path}: runs on {', '.join(sorted(events)) or 'nothing'}, not on pull_request alone")
+    allowed = ALSO.get(path.rsplit("/", 1)[1], {"pull_request"})
+    if events != allowed:
+        print(f"OFFENCE {path}: runs on {', '.join(sorted(events)) or 'nothing'}, not on {', '.join(sorted(allowed))} alone")
     for job_id, job in (spec.get("jobs") or {}).items():
         uses = str(job.get("uses", ""))
         if uses.startswith("./.github/workflows/"):
@@ -98,7 +109,7 @@ offences() { # $1=root: the offences, then the duplicated names, then a differen
 	out="$(names "$1")"
 	printf '%s\n' "$out" | grep '^OFFENCE ' | sed 's/^OFFENCE //' || true
 	printf '%s\n' "$out" | grep '^NAME ' | sed 's/^NAME //' | cut -f1 | sort | uniq -d | sed 's/^/produced more than once: /' || true
-	diff <(printf '%s\n' "$REQUIRED" | sort) <(printf '%s\n' "$out" | grep '^NAME ' | sed 's/^NAME //' | cut -f1 | sort -u) \
+	diff <(printf '%s\n%s\n' "$REQUIRED" "$ADVISORY" | sort) <(printf '%s\n' "$out" | grep '^NAME ' | sed 's/^NAME //' | cut -f1 | sort -u) \
 		| grep '^[<>]' | sed 's/^< /missing from the workflows: /; s/^> /not in the list of required names: /' || true
 }
 
@@ -119,6 +130,14 @@ check "the workflows of this repository produce exactly the listed names, each o
 d="$(cp_repo exempt)"
 sed -i 's/^  workflow_dispatch:$/  push:\n  workflow_dispatch:/' "$d/.github/workflows/publish.yml"
 check "a push trigger on the publication workflow is reported" "1" "$(offences "$d" | grep -c 'publish.yml: runs on push, schedule, workflow_dispatch, not on schedule, workflow_dispatch alone')"
+
+d="$(cp_repo watcher-event)"
+sed -i 's/^  push:$/  workflow_dispatch:\n  push:/' "$d/.github/workflows/freshness.yml"
+check "another trigger on the watchers is reported" "1" "$(offences "$d" | grep -c 'freshness.yml: runs on pull_request, push, schedule, workflow_dispatch, not on pull_request, push, schedule alone')"
+
+d="$(cp_repo watcher-name)"
+sed -i 's/^  freshness-publish:$/  freshness-other:/' "$d/.github/workflows/freshness.yml"
+check "a watcher under a name nobody declared is reported" "1" "$(offences "$d" | grep -c '^not in the list of required names: freshness-other / schedule freshness$')"
 
 d="$(cp_repo push)"
 sed -i 's/^on:$/on:\n  push:\n    branches: [main]/' "$d/.github/workflows/tests.yml"

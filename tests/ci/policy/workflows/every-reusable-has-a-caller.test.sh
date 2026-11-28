@@ -8,8 +8,8 @@
 # it, so a change to it passes every check, and the file that says the CI is covered still
 # counts it as covered.
 #
-# The two freshness reusables of this repository came with the rest of the CI and nothing here
-# called them: this repository has no workflow of watchers. Nothing reported it, because a file
+# Two freshness reusables came to this repository with the rest of the CI and nothing here
+# called them: it had no workflow of watchers then. Nothing reported it, because a file
 # that is never read cannot fail a check that reads other files.
 #
 # The rule is therefore one line per reusable that no job of any workflow calls:

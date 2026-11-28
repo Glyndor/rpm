@@ -127,6 +127,10 @@ tests/ci/policy/workflows/persist-credentials.test.sh
 	.github/workflows/**
 	tests/ci/policy/workflows/**
 
+tests/ci/policy/workflows/scheduled-workflows-are-watched.test.sh
+	.github/workflows/**
+	tests/ci/policy/workflows/**
+
 tests/ci/policy/workflows/pull-request-runs-are-superseded.test.sh
 	.github/workflows/**
 	tests/ci/policy/workflows/**
@@ -145,6 +149,15 @@ tests/ci/reusable/reusable-line-limit.test.sh
 	.github/workflows/reusable-line-limit.yml
 	.github/workflows/tests.yml
 	tests/fixtures/ci/**
+	tests/ci/reusable/**
+
+tests/ci/reusable/reusable-schedule-freshness.test.sh
+	.github/workflows/reusable-schedule-freshness.yml
+	tests/fixtures/ci/**
+	tests/ci/reusable/**
+
+tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh
+	.github/workflows/reusable-schedule-freshness.yml
 	tests/ci/reusable/**
 
 tests/ci/reusable/reusable-shell-ci.test.sh

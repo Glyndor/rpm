@@ -1,0 +1,64 @@
+name: Freshness
+
+# Watchers for things whose failure mode is silence.
+#
+# A cron that stops firing emits nothing, and "no alert" is indistinguishable from "all clear". Every scheduled workflow in this
+# organisation went dark on 2026-06-29 and four repositories stayed dark for another four weeks, all reporting `active` throughout.
+# These turn the ABSENCE of a scheduled run into a red check on ordinary work, which is the only place anyone would see it.
+#
+# Separate from the suite on purpose: these fail because something did not happen elsewhere, never because a pull request is wrong,
+# and none of them may become a required check, since a red one says nothing about the change under review.
+#
+# Every scheduled workflow of this repository has a watcher here, and scheduled-workflows-are-watched.test.sh says so for the next
+# one that is added. The limit of a daily or weekly cron is two periods plus one day (three days, fifteen), the rule that
+# reusable-schedule-freshness.yml states for its max-age-days input; a cron that fires more than once a day keeps a limit of its own.
+#
+# The watcher is on pull request (only when it changes what these jobs are made of), on push to main and on a cron of its own,
+# because a watcher that fires only on a cron shares the failure mode it exists to catch.
+
+on:
+  # Twice a day rather than daily: a single dropped firing would put a daily check past its own limit before it ran. At 08:13 and
+  # 20:13 and not on the hour, which GitHub queues for everybody at once.
+  schedule:
+    - cron: "13 8,20 * * *"
+  pull_request:
+    paths:
+      - .github/workflows/freshness.yml
+      - .github/workflows/publish.yml
+      - .github/workflows/reusable-schedule-freshness.yml
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: freshness-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # publish.yml rebuilds and uploads the repository every day. A cron that stops leaves the published repository frozen at the
+  # releases it last saw, and clients are not told: rpm metadata has no date after which they refuse it. Three days, by the rule
+  # above for a daily cron.
+  freshness-publish:
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/reusable-schedule-freshness.yml
+    with:
+      workflow: publish.yml
+      max-age-days: 3
+
+  # The watcher watches itself, and this is the last link: it has a cron, and nothing else watches whether that cron keeps firing.
+  # Two days, because the cron runs twice a day and GitHub starts it hours late, which is ordinary. count-any-conclusion, because this
+  # job watches the workflow it is part of: with the success-only query one stretch without a successful scheduled run would make it
+  # fail every run after that, and a failed run never becomes the success the next query looks for.
+  freshness-itself:
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/reusable-schedule-freshness.yml
+    with:
+      workflow: freshness.yml
+      max-age-days: 2
+      count-any-conclusion: true
