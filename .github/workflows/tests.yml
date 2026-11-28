@@ -237,6 +237,7 @@ jobs:
         ./tests/quality/lint/check-test-job-not-switchable-forms.test.sh
         ./tests/quality/lint/check-test-job-not-switchable-steps.test.sh
         ./tests/quality/lint/check-test-job-not-switchable.test.sh
+        ./tests/quality/lint/switch-rule-forms.test.sh
         ./tests/quality/lint/check-tooling-isolation.test.sh
         ./tests/quality/lint/lint-workflow-shell.test.sh
         ./tests/quality/scope/ci-job-scope-packages.test.sh

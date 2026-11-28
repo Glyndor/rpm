@@ -244,11 +244,17 @@ tests/quality/lint/check-test-job-not-switchable-context.test.sh
 	tests/quality/lint/**
 
 tests/quality/lint/check-test-job-not-switchable-inputs.test.sh
+tests/quality/lint/switch-rule-forms.test.sh
+	scripts/quality/lint/switch-rule-forms.json
+	.github/workflows/**
+
 	.github/workflows/**
 	scripts/quality/lint/check-test-job-not-switchable.sh
 	scripts/quality/lint/switch-rule-forms.json
 	tests/quality/lint/**
 
+	tests/fixtures/ci/switch-forms.sh
+	tests/fixtures/ci/switch-forms-planted.json
 tests/quality/lint/check-test-job-not-switchable-jobs.test.sh
 	.github/workflows/**
 	scripts/quality/lint/check-test-job-not-switchable.sh
@@ -284,6 +290,8 @@ tests/quality/lint/check-test-job-not-switchable.test.sh
 	tests/ci/suites/check-suite-completeness.test.sh
 	tests/quality/lint/**
 
+	tests/fixtures/ci/switch-forms.sh
+	tests/fixtures/ci/switch-forms-planted.json
 tests/quality/lint/check-tooling-isolation.test.sh
 	.github/workflows/**
 	scripts/quality/lint/check-tooling-isolation.sh
