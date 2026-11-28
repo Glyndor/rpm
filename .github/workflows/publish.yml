@@ -1,0 +1,132 @@
+name: Publish rpm repository
+
+# The publication of https://rpm.glyndor.net, in its first stage: only the plan is here. Nothing in this
+# file builds, signs, uploads or purges anything, no job names a secret or an environment, and there is no
+# schedule. A manual run ends red: the plan calls a script that is not in the repository yet, and every
+# other job stops on purpose.
+#
+# It exists before the rest because the rule that refuses switchable jobs judges a pull request by the base
+# commit. A job that carries `if:` or `needs:` is accepted only when the base already lists its exact form,
+# and an output a condition reads only when the job that writes it is already there, unchanged. The `plan`
+# job below and the forms of scripts/quality/lint/switch-rule-forms.json are that base; the pull request
+# that follows replaces the four jobs that stop with the ones that do the work and leaves `plan` as it is.
+#
+#   plan      contents: read. Resolves the latest tag of each product once, fixes the commit, refuses a
+#             publish that does not come from main.
+#   admit, rehearse, sign, publish
+#             contents: read. Each stops with an error.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "rehearsal or publish; in this stage neither goes further than the plan"
+        type: choice
+        options: [rehearsal, publish]
+        default: rehearsal
+
+permissions: {}
+
+# Publications are serialised and never cancelled: a partial upload must always finish or be put back.
+concurrency:
+  group: publish-rpm
+  cancel-in-progress: false
+
+env:
+  ARCHIVE_URL: "https://rpm.glyndor.net"
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-26.04
+    # Bound, not yet measured: it makes six API calls. The first runs will set a tighter number.
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      sha: ${{ steps.plan.outputs.sha }}
+      epoch: ${{ steps.plan.outputs.epoch }}
+      products: ${{ steps.plan.outputs.products }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: plan
+        name: Resolve the mode, the commit and the tag of each product
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          INPUT_MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          mode=publish
+          if [ "$EVENT" = workflow_dispatch ]; then mode="$INPUT_MODE"; fi
+          case "$EVENT" in schedule | workflow_dispatch) ;; *) echo "::error::event $EVENT is not allowed"; exit 1 ;; esac
+          case "$mode" in rehearsal | publish) ;; *) echo "::error::mode '$mode' is neither rehearsal nor publish"; exit 1 ;; esac
+          if [ "$mode" = publish ] && [ "$REF" != refs/heads/main ]; then
+            echo "::error::a publication runs from refs/heads/main only, not from $REF"; exit 1
+          fi
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::the commit is not a full SHA"; exit 1; }
+          bash scripts/publish/plan-products.sh > plan.txt
+          {
+            echo "mode=$mode"
+            echo "sha=$SHA"
+            echo "epoch=$(date +%s)"
+            echo "products=$(tr '\n' ',' < plan.txt | sed 's/,$//')"
+          } >> "$GITHUB_OUTPUT"
+          cat plan.txt
+
+  admit:
+    name: Admit the releases
+    # ubuntu-latest on purpose: this job only prints a message and stops.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: This stage is not in the repository yet
+        run: |
+          echo "::error::the admit stage of the publication is not in the repository yet"
+          exit 1
+
+  rehearse:
+    name: Rehearse
+    # ubuntu-latest on purpose: this job only prints a message and stops.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: This stage is not in the repository yet
+        run: |
+          echo "::error::the rehearse stage of the publication is not in the repository yet"
+          exit 1
+
+  sign:
+    name: Sign
+    # ubuntu-latest on purpose: this job only prints a message and stops.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: This stage is not in the repository yet
+        run: |
+          echo "::error::the sign stage of the publication is not in the repository yet"
+          exit 1
+
+  publish:
+    name: Publish
+    # ubuntu-latest on purpose: this job only prints a message and stops.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: This stage is not in the repository yet
+        run: |
+          echo "::error::the publish stage of the publication is not in the repository yet"
+          exit 1

@@ -38,6 +38,10 @@ check() { # <description> <expected> <actual>
 	fi
 }
 
+# The workflows that are not pull request checks: the events each may run on, and no other. The
+# publication runs by hand; none of its jobs may produce a name the ruleset requires.
+EXEMPT="publish.yml=workflow_dispatch"
+
 # The checks of a pull request, as the ruleset names them.
 REQUIRED="commit identity
 dco / Signed-off-by present on every commit
@@ -56,11 +60,12 @@ workflow-lint / workflow-lint"
 # names <root>: the check names the workflows of the tree produce, one per line with the
 # file that produces it; and one line per offence of the event rule.
 names() { # $1=root
-	python3 -I - "$1" "$HERE/tests/fixtures/ci/workflow-files.py" <<'PY'
+	python3 -I - "$1" "$HERE/tests/fixtures/ci/workflow-files.py" "$EXEMPT" <<'PY'
 import sys
 
-root, helper = sys.argv[1:3]
+root, helper, exempt = sys.argv[1:4]
 exec(open(helper).read())
+EXEMPT = {pair.split("=")[0]: set(pair.split("=")[1].split(",")) for pair in exempt.split()}
 INNER = {}
 for path in enumerate_files(root):
     if path.startswith(".github/workflows/reusable-") and path.endswith(".yml"):
@@ -71,6 +76,10 @@ for path in enumerate_files(root):
         continue
     spec = load(root, path)
     events = triggers(spec)
+    if path.rsplit("/", 1)[1] in EXEMPT:
+        if events != EXEMPT[path.rsplit("/", 1)[1]]:
+            print(f"OFFENCE {path}: runs on {', '.join(sorted(events)) or 'nothing'}, not on {', '.join(sorted(EXEMPT[path.rsplit('/', 1)[1]]))} alone")
+        continue
     if events != {"pull_request"}:
         print(f"OFFENCE {path}: runs on {', '.join(sorted(events)) or 'nothing'}, not on pull_request alone")
     for job_id, job in (spec.get("jobs") or {}).items():
@@ -105,6 +114,10 @@ cp_repo() { # <name>
 }
 
 check "the workflows of this repository produce exactly the listed names, each once, on pull_request alone" "" "$(offences "$HERE")"
+
+d="$(cp_repo exempt)"
+sed -i 's/^  workflow_dispatch:$/  push:\n  workflow_dispatch:/' "$d/.github/workflows/publish.yml"
+check "a push trigger on the publication workflow is reported" "1" "$(offences "$d" | grep -c 'publish.yml: runs on push, workflow_dispatch, not on workflow_dispatch alone')"
 
 d="$(cp_repo push)"
 sed -i 's/^on:$/on:\n  push:\n    branches: [main]/' "$d/.github/workflows/tests.yml"

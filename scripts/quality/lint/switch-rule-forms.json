@@ -4,7 +4,11 @@
   {"file": ".github/workflows/reusable-empty-diff.yml", "job": "empty-diff", "reusable": null, "forms": [{"if": "github.event_name == 'pull_request'"}], "why": "`empty diff` exists for a pull request, the only event its caller runs on."},
   {"file": ".github/workflows/reusable-shell-ci.yml", "job": "test", "reusable": null, "forms": [{"if": "inputs.test-command != ''"}], "why": "`shell / test` has nothing to run without a test-command, and the rule refuses a caller that passes none."},
   {"file": ".github/workflows/tests.yml", "job": "shell", "reusable": "reusable-shell-ci.yml", "forms": [{"needs": ["dco", "empty-diff", "commit-identity", "secret-scan", "folder-limit", "line-limit", "workflow-lint"]}], "why": "The suite waits for the checks that finish in seconds, so a pull request that is already red does not install packages. The `needs` is a switch unless a gate answers for it, which the rule requires (needs_the_gate)."},
-  {"file": ".github/workflows/tests.yml", "job": "gate", "reusable": null, "forms": [{"if": "always()", "needs": ["dco", "empty-diff", "commit-identity", "secret-scan", "folder-limit", "line-limit", "workflow-lint", "shell"]}], "why": "The gate carries `always()` so that a failed dependency does not skip it: a skipped job reports Success."}
+  {"file": ".github/workflows/tests.yml", "job": "gate", "reusable": null, "forms": [{"if": "always()", "needs": ["dco", "empty-diff", "commit-identity", "secret-scan", "folder-limit", "line-limit", "workflow-lint", "shell"]}], "why": "The gate carries `always()` so that a failed dependency does not skip it: a skipped job reports Success."},
+  {"file": ".github/workflows/publish.yml", "job": "admit", "reusable": null, "forms": [{"if": "${{ needs.plan.outputs.products != '' }}", "needs": "plan"}], "why": "a job of the publication, which no pull request runs (schedule and manual only): the stages are ordered with `needs`, and the signing and uploading stages run only in the publish mode; it is not a required check."},
+  {"file": ".github/workflows/publish.yml", "job": "rehearse", "reusable": null, "forms": [{"if": "${{ needs.plan.outputs.mode == 'rehearsal' }}", "needs": ["plan", "admit"]}], "why": "a job of the publication, which no pull request runs (schedule and manual only): the stages are ordered with `needs`, and the signing and uploading stages run only in the publish mode; it is not a required check."},
+  {"file": ".github/workflows/publish.yml", "job": "sign", "reusable": null, "forms": [{"if": "${{ needs.plan.outputs.mode == 'publish' }}", "needs": ["plan", "admit"]}], "why": "a job of the publication, which no pull request runs (schedule and manual only): the stages are ordered with `needs`, and the signing and uploading stages run only in the publish mode; it is not a required check."},
+  {"file": ".github/workflows/publish.yml", "job": "publish", "reusable": null, "forms": [{"if": "${{ needs.plan.outputs.mode == 'publish' }}", "needs": ["plan", "sign"]}], "why": "a job of the publication, which no pull request runs (schedule and manual only): the stages are ordered with `needs`, and the signing and uploading stages run only in the publish mode; it is not a required check."}
  ],
  "step_conditions": [
   {"file": ".github/workflows/reusable-line-limit.yml", "job": "line-limit", "ifs": ["steps.scope.outputs.needed != 'false'"]},
@@ -16,6 +20,7 @@
   "reusable-dco.yml": [],
   "reusable-empty-diff.yml": [],
   "reusable-line-limit.yml": ["extensions"],
+  "reusable-schedule-freshness.yml": ["count-any-conclusion", "max-age-days", "max-age-hours", "workflow"],
   "reusable-shell-ci.yml": ["apt-packages", "skip-suite-paths", "test-command"],
   "reusable-workflow-lint.yml": []
  },
