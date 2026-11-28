@@ -11,10 +11,13 @@
 # `tag` when the product releases from its tag (the attestation must name refs/tags/<tag> and the
 # commit that tag points at), or the full ref (refs/heads/main) of a product that releases from a dispatch.
 #
-# A product with no `.rpm` asset in its latest release is skipped with a notice while the
-# channel serves nothing of it, and refuses the run once it is served: a product is never
-# dropped from the repository by a release that forgot its packages. helmly and
-# epistle-panel publish no rpm yet; the day they do, they are picked up with no change here.
+# The channel reads one release of each product: the one marked latest when its tag is a version
+# (vX.Y.Z, or vX.Y.Z+rN), and otherwise the newest whose tag is one. A product with no such release,
+# or with no `.rpm` asset in it, is skipped with a notice while the channel serves nothing of it, and
+# refuses the run once it is served: a product is never dropped from the repository by a release that
+# forgot its packages. epistle-panel has no release yet; the day it has one with rpm files, it is
+# picked up with no change here. helmly tags its releases `dashboard@X.Y.Z`, which is not a version
+# tag, so the channel skips it until it accepts that form.
 podman	podman	x86_64,aarch64	release.yml	tag
 podup	static	x86_64,aarch64	release.yml	tag
 epistle	static	x86_64,aarch64	release.yml	tag

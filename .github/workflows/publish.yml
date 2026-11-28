@@ -1,29 +1,35 @@
 name: Publish rpm repository
 
-# The publication of https://rpm.glyndor.net, in its first stage: only the plan is here. Nothing in this
-# file builds, signs, uploads or purges anything, no job names a secret or an environment, and there is no
-# schedule. A manual run ends red: the plan calls a script that is not in the repository yet, and every
-# other job stops on purpose.
+# Rebuilds the signed rpm repository at https://rpm.glyndor.net from the newest version release of each product
+# and, only when asked to publish, uploads it to Cloudflare R2.
 #
-# It exists before the rest because the rule that refuses switchable jobs judges a pull request by the base
-# commit. A job that carries `if:` or `needs:` is accepted only when the base already lists its exact form,
-# and an output a condition reads only when the job that writes it is already there, unchanged. The `plan`
-# job below and the forms of scripts/quality/lint/switch-rule-forms.json are that base; the pull request
-# that follows replaces the four jobs that stop with the ones that do the work and leaves `plan` as it is.
+# Two modes, one pipeline. `rehearsal` (the default of a manual run) builds the whole tree, signs it
+# with a key made in the job and leaves it as an artifact: no job of that mode names a secret, touches
+# the bucket or purges anything, and it may run from any branch. `publish` (the schedule, or a manual
+# run that picks it) uses the archive key and the bucket credentials, and only from main.
 #
-#   plan      contents: read. Resolves the latest tag of each product once, fixes the commit, refuses a
+# Jobs and what each holds (rules of the organization for jobs that sign and publish):
+#   plan      contents: read. Chooses the release of each product once, fixes the commit, refuses a
 #             publish that does not come from main.
-#   admit, rehearse, sign, publish
-#             contents: read. Each stops with an error.
+#   admit     contents: read. Downloads and admits the releases (signature, set, header, attestation).
+#   rehearse  contents: read. Re-admits, builds and signs with a throwaway key. No secret, no environment.
+#   sign      environment publish, contents: read. Re-admits with no key in the environment, then signs
+#             with the archive key in the one step that builds. No bucket credentials.
+#   publish   environment publish, contents: read. Verifies the tree it downloads, then uploads it with
+#             the bucket credentials and purges the cache. No archive key.
+# Every job that names a secret declares the environment `publish` (deployment policy: main only) and
+# opens with a step that refuses any event or ref but the allowed ones; a test holds both.
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "rehearsal or publish; in this stage neither goes further than the plan"
+        description: "rehearsal builds and signs with a throwaway key and uploads nothing; publish uploads (main only)"
         type: choice
         options: [rehearsal, publish]
         default: rehearsal
+  schedule:
+    - cron: "30 6 * * *"
 
 permissions: {}
 
@@ -39,7 +45,7 @@ jobs:
   plan:
     name: Plan
     runs-on: ubuntu-26.04
-    # Bound, not yet measured: it makes six API calls. The first runs will set a tighter number.
+    # Bound, not yet measured: it makes at most two API calls for each product. The first runs will set a tighter number.
     timeout-minutes: 10
     permissions:
       contents: read
@@ -81,52 +87,193 @@ jobs:
 
   admit:
     name: Admit the releases
-    # ubuntu-latest on purpose: this job only prints a message and stops.
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    needs: plan
+    if: ${{ needs.plan.outputs.products != '' }}
+    runs-on: ubuntu-26.04
+    # Bound, not yet measured: it downloads the rpm files of up to six releases.
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
-      - name: This stage is not in the repository yet
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Install rpm
         run: |
-          echo "::error::the admit stage of the publication is not in the repository yet"
-          exit 1
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rpm python3-cryptography
+      - name: Download and admit each release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCTS: ${{ needs.plan.outputs.products }}
+        run: bash scripts/publish/admit-products.sh "$RUNNER_TEMP/admitted"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: admitted
+          path: ${{ runner.temp }}/admitted
+          if-no-files-found: error
+          retention-days: 1
 
   rehearse:
     name: Rehearse
-    # ubuntu-latest on purpose: this job only prints a message and stops.
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    needs: [plan, admit]
+    if: ${{ needs.plan.outputs.mode == 'rehearsal' }}
+    runs-on: ubuntu-26.04
+    # Bound, not yet measured: one tree of up to 14 repositories.
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
-      - name: This stage is not in the repository yet
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: admitted
+          path: ${{ runner.temp }}/admitted
+      - name: Install rpm and createrepo_c
         run: |
-          echo "::error::the rehearse stage of the publication is not in the repository yet"
-          exit 1
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rpm createrepo-c python3-cryptography
+      - name: Build and sign the tree with a throwaway key
+        env:
+          PRODUCTS: ${{ needs.plan.outputs.products }}
+          EPOCH: ${{ needs.plan.outputs.epoch }}
+        run: bash scripts/publish/rehearse-tree.sh "$RUNNER_TEMP/admitted" "$RUNNER_TEMP/tree"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rehearsal-tree
+          path: ${{ runner.temp }}/tree
+          if-no-files-found: error
+          retention-days: 7
 
   sign:
     name: Sign
-    # ubuntu-latest on purpose: this job only prints a message and stops.
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    needs: [plan, admit]
+    if: ${{ needs.plan.outputs.mode == 'publish' }}
+    runs-on: ubuntu-26.04
+    environment: publish
+    outputs:
+      digest: ${{ steps.digest.outputs.digest }}
+    # Bound, not yet measured: see rehearse.
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
-      - name: This stage is not in the repository yet
+      - name: Only main may sign
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          PLANNED: ${{ needs.plan.outputs.sha }}
         run: |
-          echo "::error::the sign stage of the publication is not in the repository yet"
-          exit 1
+          set -euo pipefail
+          case "$EVENT" in schedule | workflow_dispatch) ;; *) echo "::error::event $EVENT may not sign"; exit 1 ;; esac
+          [ "$REF" = refs/heads/main ] || { echo "::error::signing runs from refs/heads/main only, not from $REF"; exit 1; }
+          [ "$SHA" = "$PLANNED" ] || { echo "::error::this commit is not the one the plan fixed"; exit 1; }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: admitted
+          path: ${{ runner.temp }}/admitted
+      - name: Install rpm and createrepo_c
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rpm createrepo-c python3-cryptography
+      - name: Admit again, with no key in the environment
+        env:
+          PRODUCTS: ${{ needs.plan.outputs.products }}
+        run: bash scripts/publish/readmit-products.sh "$RUNNER_TEMP/admitted"
+      - name: Build and sign the tree with the archive key
+        env:
+          GLYNDOR_RPM_GPG_PRIVATE_KEY: ${{ secrets.GLYNDOR_RPM_GPG_PRIVATE_KEY }}
+          PRODUCTS: ${{ needs.plan.outputs.products }}
+          EPOCH: ${{ needs.plan.outputs.epoch }}
+        run: bash scripts/publish/sign-tree.sh "$RUNNER_TEMP/admitted" "$RUNNER_TEMP/tree"
+      - id: digest
+        name: Say which tree this job made
+        run: echo "digest=$(bash scripts/publish/tree-digest.sh "$RUNNER_TEMP/tree")" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tree
+          path: ${{ runner.temp }}/tree
+          if-no-files-found: error
+          retention-days: 1
 
   publish:
     name: Publish
-    # ubuntu-latest on purpose: this job only prints a message and stops.
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    needs: [plan, sign]
+    if: ${{ needs.plan.outputs.mode == 'publish' }}
+    runs-on: ubuntu-26.04
+    environment: publish
+    # Bound, not yet measured: an upload of the new files and a purge of a few dozen URLs.
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
-      - name: This stage is not in the repository yet
+      - name: Only main may publish
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          PLANNED: ${{ needs.plan.outputs.sha }}
         run: |
-          echo "::error::the publish stage of the publication is not in the repository yet"
-          exit 1
+          set -euo pipefail
+          case "$EVENT" in schedule | workflow_dispatch) ;; *) echo "::error::event $EVENT may not publish"; exit 1 ;; esac
+          [ "$REF" = refs/heads/main ] || { echo "::error::publishing runs from refs/heads/main only, not from $REF"; exit 1; }
+          [ "$SHA" = "$PLANNED" ] || { echo "::error::this commit is not the one the plan fixed"; exit 1; }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: The plan is still the current one
+        env:
+          PLAN_EPOCH: ${{ needs.plan.outputs.epoch }}
+        # A retry hours later, or an approval that waited a day, would publish choices that a later release replaced.
+        run: bash scripts/publish/check-plan-age.sh "$PLAN_EPOCH" 10800
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tree
+          path: ${{ runner.temp }}/tree
+      - name: Install rpm
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rpm
+      - name: The artifact is the tree the signing job made
+        env:
+          SIGNED: ${{ needs.sign.outputs.digest }}
+        run: |
+          set -euo pipefail
+          [[ "$SIGNED" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::the signing job gave no digest of its tree"; exit 1; }
+          [ "$(bash scripts/publish/tree-digest.sh "$RUNNER_TEMP/tree")" = "$SIGNED" ] || { echo "::error::the artifact is not the tree the signing job made"; exit 1; }
+      - name: Read the tree again before it is uploaded
+        run: bash scripts/verify/verify-tree.sh "$RUNNER_TEMP/tree" keyring/glyndor-rpm-key.asc
+      - name: The installers and the index page are the ones this commit renders
+        # No signature covers them and people run the installers as root: they are rendered again here and compared.
+        run: bash scripts/publish/check-static-files.sh "$RUNNER_TEMP/tree" keyring/glyndor-rpm-key.asc
+      - name: Upload to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.GLYNDOR_RPM_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.GLYNDOR_RPM_R2_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL: ${{ secrets.GLYNDOR_RPM_R2_ENDPOINT }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d "$RUNNER_TEMP/sync.XXXXXX")"
+          bash scripts/publish/sync-tree.sh "$RUNNER_TEMP/tree" glyndor-rpm "$work"
+      - name: Purge the Cloudflare cache
+        env:
+          CF_TOKEN: ${{ secrets.GLYNDOR_CF_PURGE_TOKEN }}
+          CF_ZONE: ${{ secrets.GLYNDOR_CF_ZONE_ID }}
+        run: bash scripts/publish/purge-cache.sh "$ARCHIVE_URL" "$RUNNER_TEMP/tree" 120
+      - name: Read the indexes back through the public address
+        run: bash scripts/publish/readback-public.sh "$ARCHIVE_URL" "$RUNNER_TEMP/tree" keyring/glyndor-rpm-key.asc

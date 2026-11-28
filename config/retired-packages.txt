@@ -1,0 +1,4 @@
+# Package names the channel may stop serving, one per line (a comment takes a line of its own).
+# check-release-order.sh refuses a tree that drops a package the repository serves today, so that a
+# release that forgot its rpm files cannot make a product disappear; a product that is retired on
+# purpose is listed here in the pull request that retires it.

@@ -127,6 +127,10 @@ tests/ci/policy/workflows/persist-credentials.test.sh
 	.github/workflows/**
 	tests/ci/policy/workflows/**
 
+tests/ci/policy/workflows/scheduled-workflows-are-watched.test.sh
+	.github/workflows/**
+	tests/ci/policy/workflows/**
+
 tests/ci/policy/workflows/pull-request-runs-are-superseded.test.sh
 	.github/workflows/**
 	tests/ci/policy/workflows/**
@@ -145,6 +149,15 @@ tests/ci/reusable/reusable-line-limit.test.sh
 	.github/workflows/reusable-line-limit.yml
 	.github/workflows/tests.yml
 	tests/fixtures/ci/**
+	tests/ci/reusable/**
+
+tests/ci/reusable/reusable-schedule-freshness.test.sh
+	.github/workflows/reusable-schedule-freshness.yml
+	tests/fixtures/ci/**
+	tests/ci/reusable/**
+
+tests/ci/reusable/reusable-schedule-freshness/reusable-schedule-freshness-grace.test.sh
+	.github/workflows/reusable-schedule-freshness.yml
 	tests/ci/reusable/**
 
 tests/ci/reusable/reusable-shell-ci.test.sh
@@ -476,3 +489,140 @@ tests/ci/suites/heavy-job-budget.test.sh
 	tests/ci/suites/**
 	tests/verify/**
 	tests/build/**
+
+tests/build/assemble-tree.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/build/**
+
+tests/build/build-installers.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/build/**
+
+tests/ci/policy/workflows/publish-workflow.test.sh
+	.github/workflows/publish.yml
+	scripts/publish/**
+	tests/ci/policy/workflows/**
+
+tests/installer/install-template.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/installer/**
+
+tests/publish/admit-products.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/publish/**
+
+tests/publish/parse-plan.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/publish/**
+
+tests/publish/plan-products-releases.test.sh
+	config/**
+	keyring/**
+	scripts/publish/**
+	scripts/verify/**
+	tests/publish/**
+
+tests/publish/plan-products.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/publish/**
+
+tests/publish/purge-cache.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/publish/**
+
+tests/publish/readmit-products.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/publish/**
+
+tests/publish/rehearse-tree.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/publish/**
+
+tests/publish/sign-tree.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/publish/**
+
+tests/publish/sync-tree-keeps.test.sh
+	scripts/**
+	.github/workflows/**
+	tests/fixtures/rpm/**
+	tests/publish/**
+
+tests/publish/sync-tree.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/publish/**
+
+tests/publish/check-plan-age.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/publish/**
+
+tests/publish/check-static-files.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/publish/**
+
+tests/publish/tree-digest.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	.github/workflows/publish.yml
+	tests/publish/**
+
+tests/publish/readback-public.test.sh
+	config/**
+	keyring/**
+	scripts/**
+	tests/fixtures/rpm/**
+	tests/publish/**

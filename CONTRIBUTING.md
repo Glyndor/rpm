@@ -102,6 +102,12 @@ and fails unless every other job succeeded.
 every job of it and fail on a warning that something is deprecated or going
 away. The ruleset of `main` requires both, and `gate` does not wait for them.
 
+`freshness.yml` holds the watchers of the scheduled workflows: it fails when
+`publish.yml` has not succeeded on its schedule for three days, or when its own
+cron stopped firing. It runs twice a day, on a push to `main` and on a pull
+request that changes these workflows, and it is not a required check. A workflow
+with a `schedule` needs a watcher there, and a test fails without one.
+
 A file may hold 500 lines of code (comments and blank lines do not count), and a
 folder twenty files directly. A folder over twenty is listed with a ceiling and a
 reason in `.github/folder-limit-exceptions.txt`; the ceiling can only go down.
