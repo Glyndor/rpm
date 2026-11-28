@@ -241,6 +241,7 @@ jobs:
         ./tests/publish/readmit-products.test.sh
         ./tests/publish/rehearse-tree.test.sh
         ./tests/publish/sign-tree.test.sh
+        ./tests/publish/sync-tree-keeps.test.sh
         ./tests/publish/sync-tree.test.sh
         ./tests/publish/tree-digest.test.sh
         ./tests/quality/coverage/check-suites-wired.test.sh

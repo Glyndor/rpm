@@ -91,5 +91,6 @@ tests/publish/purge-cache.test.sh -
 tests/publish/readmit-products.test.sh rpm python3-cryptography
 tests/publish/rehearse-tree.test.sh rpm createrepo-c python3-cryptography
 tests/publish/sign-tree.test.sh rpm createrepo-c python3-cryptography
+tests/publish/sync-tree-keeps.test.sh -
 tests/publish/sync-tree.test.sh rpm createrepo-c python3-cryptography
 tests/publish/readback-public.test.sh rpm createrepo-c python3-cryptography

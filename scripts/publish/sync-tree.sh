@@ -21,13 +21,12 @@
 #      ends red saying which repositories could not be confirmed to hold their previous pair and
 #      which had none to go back to.
 #   0. before anything goes up, a repository whose revision in the bucket is higher than the tree's is refused.
-#   6. objects that left the tree are noted in state/retired.tsv and deleted KEEP_DAYS (15) days after
-#      that, never earlier and never from a first level folder that is not in the tree.
+# Nothing is ever deleted from the bucket. What left the tree stays there: an index a client still holds may
+# name it, and nothing signed says when it stopped being part of the repository.
 # Requires: aws (CLI v2), jq, gpg, gpgv, sha256sum.
 set -euo pipefail
 export LC_ALL=C
 
-KEEP_DAYS="${KEEP_DAYS:-15}"
 die() { echo "::error::sync-tree: $*" >&2; exit 1; }
 [ "$#" -eq 3 ] || die "usage: sync-tree.sh <tree> <bucket> <work-dir>"
 TREE="$1"; BUCKET="$2"; WORK="$3"
@@ -42,8 +41,6 @@ s3() { aws s3 "$@" --only-show-errors --no-progress; }
 sha() { sha256sum "$1" | cut -d' ' -f1; }
 
 mapfile -t FILES < <(cd "$TREE" && find . -type f -printf '%P\n' | sort)
-declare -A IN_TREE=()
-for f in "${FILES[@]}"; do IN_TREE[$f]=1; done
 aws s3api list-objects-v2 --bucket "$BUCKET" --output json > "$WORK/listing.json" || die "cannot list the bucket"
 declare -A THERE=()
 while IFS=$'\t' read -r key _modified; do THERE[$key]=1; done \
@@ -172,37 +169,4 @@ for r in "${PAIRS[@]}"; do
 	[ "$ok" -eq 1 ] || roll_back "$r reads back different from what was uploaded"
 done
 
-# --- 6: what left the tree is deleted only after the metadata that referenced it has expired ------------
-# The tree is rebuilt every run, so nothing in it says when an object stopped being part of it; state/retired.tsv
-# in the bucket does (`<key> <TAB> <epoch it was first seen out of the tree>`). An object is deleted once that
-# was KEEP_DAYS ago, never by the date it was uploaded. KEEP_DAYS is a chosen window, not a bound taken from the
-# metadata: repomd.xml carries no expiry, so a client still holding an index older than that finds what it names
-# gone. It fails closed: nothing is deleted from a folder that is not in the tree of this run, whatever the config
-# says, so the folder of an id that is finished stays with its last signed repomd.xml.
-NOW="${SYNC_NOW:-$(date +%s)}"
-declare -A RET=()
-if [ -n "${THERE[state/retired.tsv]:-}" ]; then
-	s3 cp "s3://$BUCKET/state/retired.tsv" "$WORK/retired.tsv" || die "cannot read state/retired.tsv"
-	while IFS=$'\t' read -r key since; do
-		[[ "$since" =~ ^[0-9]{9,11}$ ]] || die "state/retired.tsv has a malformed line for '$key'"
-		RET[$key]="$since"
-	done < "$WORK/retired.tsv"
-fi
-limit=$((NOW - KEEP_DAYS * 86400))
-deleted=0
-declare -A NEXT=()
-for key in "${!THERE[@]}"; do
-	case "$key" in state/*) continue ;; esac
-	[ -z "${IN_TREE[$key]:-}" ] || continue
-	# only what lives in a folder this run is publishing may be deleted: a key with no folder, or in a folder that is not
-	# in the tree (an id that is finished, one the config forgot, one nobody has heard of), is never touched or noted
-	case "$key" in */*) ;; *) continue ;; esac
-	[ -d "$TREE/${key%%/*}" ] || continue
-	if [ -z "${RET[$key]:-}" ]; then NEXT[$key]="$NOW"; continue; fi
-	if [ "${RET[$key]}" -gt "$limit" ]; then NEXT[$key]="${RET[$key]}"; continue; fi
-	aws s3api delete-object --bucket "$BUCKET" --key "$key" > /dev/null || die "cannot delete $key"
-	deleted=$((deleted + 1))
-done
-for key in "${!NEXT[@]}"; do printf '%s\t%s\n' "$key" "${NEXT[$key]}"; done | sort > "$WORK/retired.new"
-s3 cp "$WORK/retired.new" "s3://$BUCKET/state/retired.tsv" --cache-control "no-store" || die "cannot write state/retired.tsv"
-echo "uploaded ${#FILES[@]} file(s) of the tree, ${#PAIRS[@]} repository pair(s) verified from the bucket, ${#NEXT[@]} object(s) retired, $deleted deleted"
+echo "uploaded ${#FILES[@]} file(s) of the tree, ${#PAIRS[@]} repository pair(s) verified from the bucket"

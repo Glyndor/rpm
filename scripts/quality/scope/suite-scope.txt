@@ -582,6 +582,12 @@ tests/publish/sign-tree.test.sh
 	.github/workflows/publish.yml
 	tests/publish/**
 
+tests/publish/sync-tree-keeps.test.sh
+	scripts/**
+	.github/workflows/**
+	tests/fixtures/rpm/**
+	tests/publish/**
+
 tests/publish/sync-tree.test.sh
 	config/**
 	keyring/**
