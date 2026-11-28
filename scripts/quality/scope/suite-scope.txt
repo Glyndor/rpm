@@ -535,6 +535,13 @@ tests/publish/parse-plan.test.sh
 	.github/workflows/publish.yml
 	tests/publish/**
 
+tests/publish/plan-products-releases.test.sh
+	config/**
+	keyring/**
+	scripts/publish/**
+	scripts/verify/**
+	tests/publish/**
+
 tests/publish/plan-products.test.sh
 	config/**
 	keyring/**

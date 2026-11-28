@@ -82,6 +82,7 @@ tests/ci/policy/workflows/publish-workflow.test.sh python3-yaml
 tests/installer/install-template.test.sh rpm python3-cryptography
 tests/publish/admit-products.test.sh rpm python3-cryptography
 tests/publish/parse-plan.test.sh -
+tests/publish/plan-products-releases.test.sh -
 tests/publish/plan-products.test.sh rpm createrepo-c python3-cryptography
 tests/publish/check-plan-age.test.sh -
 tests/publish/check-static-files.test.sh rpm createrepo-c python3-cryptography
